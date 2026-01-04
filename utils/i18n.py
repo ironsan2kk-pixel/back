@@ -1,0 +1,113 @@
+"""
+═══════════════════════════════════════════════════════════════════════════════
+🌐 ИНТЕРНАЦИОНАЛИЗАЦИЯ (I18N)
+═══════════════════════════════════════════════════════════════════════════════
+Функции для работы с переводами.
+
+ПРИМЕЧАНИЕ: Полная реализация находится в Chat 2 (chat2_core.zip).
+Этот файл содержит базовую заглушку для запуска.
+═══════════════════════════════════════════════════════════════════════════════
+"""
+
+import json
+import logging
+from pathlib import Path
+from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+# Кэш переводов
+_translations: Dict[str, Dict[str, str]] = {}
+
+# Путь к файлам локализации
+LOCALES_DIR = Path(__file__).parent.parent / "locales"
+
+
+def load_translations(lang: str = "ru") -> Dict[str, str]:
+    """
+    Загрузка переводов для указанного языка.
+    
+    Args:
+        lang: Код языка (ru, en)
+        
+    Returns:
+        Словарь переводов
+    """
+    global _translations
+    
+    if lang in _translations:
+        return _translations[lang]
+    
+    locale_file = LOCALES_DIR / f"{lang}.json"
+    
+    try:
+        if locale_file.exists():
+            with open(locale_file, "r", encoding="utf-8") as f:
+                _translations[lang] = json.load(f)
+                return _translations[lang]
+    except Exception as e:
+        logger.error(f"Ошибка загрузки переводов {lang}: {e}")
+    
+    # Возвращаем пустой словарь если файл не найден
+    _translations[lang] = {}
+    return _translations[lang]
+
+
+def get_text(
+    key: str,
+    lang: str = "ru",
+    **kwargs
+) -> str:
+    """
+    Получение текста по ключу с подстановкой переменных.
+    
+    Args:
+        key: Ключ перевода
+        lang: Код языка
+        **kwargs: Переменные для подстановки
+        
+    Returns:
+        Переведённый текст или ключ если перевод не найден
+    """
+    translations = load_translations(lang)
+    
+    # Поддержка вложенных ключей: "menu.main.title"
+    text = translations
+    for part in key.split("."):
+        if isinstance(text, dict):
+            text = text.get(part, key)
+        else:
+            return key
+    
+    if not isinstance(text, str):
+        return key
+    
+    # Подстановка переменных
+    if kwargs:
+        try:
+            text = text.format(**kwargs)
+        except (KeyError, ValueError):
+            pass
+    
+    return text
+
+
+def get_available_languages() -> list:
+    """
+    Получение списка доступных языков.
+    
+    Returns:
+        Список кодов языков
+    """
+    languages = []
+    
+    if LOCALES_DIR.exists():
+        for file in LOCALES_DIR.glob("*.json"):
+            languages.append(file.stem)
+    
+    return languages or ["ru", "en"]
+
+
+# Алиасы для удобства
+_ = get_text
+t = get_text

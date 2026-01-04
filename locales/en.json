@@ -1,0 +1,85 @@
+{
+    "welcome": "👋 Welcome to the bot!\n\nHere you can purchase access to private channels.",
+    "select_language": "🌐 Select language / Выберите язык:",
+    "language_set": "✅ Language set: English",
+    
+    "menu": {
+        "main": "📋 <b>Main Menu</b>\n\nSelect an action:",
+        "catalog": "📢 Catalog",
+        "profile": "👤 Profile",
+        "support": "💬 Support",
+        "language": "🌐 Language"
+    },
+    
+    "catalog": {
+        "title": "📢 <b>Channel Catalog</b>\n\nSelect a category:",
+        "channels": "📢 Channels",
+        "packages": "📦 Packages",
+        "empty": "😔 No channels added yet"
+    },
+    
+    "channel": {
+        "info": "📢 <b>{title}</b>\n\n{description}\n\n👥 Subscribers: {subscribers}",
+        "subscribe": "📝 Subscribe"
+    },
+    
+    "subscription": {
+        "select_period": "⏱ Select subscription period:",
+        "days_30": "30 days",
+        "days_90": "90 days",
+        "days_365": "365 days",
+        "price": "💰 Price: {price}"
+    },
+    
+    "payment": {
+        "title": "💳 <b>Payment</b>",
+        "amount": "💰 Amount: {amount}",
+        "pay_button": "💳 Pay",
+        "processing": "⏳ Processing payment...",
+        "success": "✅ Payment successful!",
+        "failed": "❌ Payment failed"
+    },
+    
+    "profile": {
+        "title": "👤 <b>Your Profile</b>",
+        "id": "🆔 ID: {user_id}",
+        "subscriptions": "📢 Active subscriptions: {count}",
+        "registered": "📅 Registration date: {date}"
+    },
+    
+    "promo": {
+        "enter": "🎟 Enter promo code:",
+        "applied": "✅ Promo code applied! Discount: {discount}",
+        "invalid": "❌ Invalid promo code",
+        "expired": "❌ Promo code has expired"
+    },
+    
+    "subscription_expired": "⚠️ Your subscription to <b>{channel_name}</b> has expired.",
+    "subscription_expires_3_days": "⏰ Subscription to <b>{channel_name}</b> expires on {expires_at}",
+    "subscription_expires_1_day": "⏰ Subscription to <b>{channel_name}</b> expires tomorrow!",
+    "subscription_expires_soon": "⏰ Subscription to <b>{channel_name}</b> expires in {hours} hours!",
+    
+    "buttons": {
+        "back": "◀️ Back",
+        "cancel": "❌ Cancel",
+        "confirm": "✅ Confirm",
+        "refresh": "🔄 Refresh"
+    },
+    
+    "errors": {
+        "unknown": "❌ An error occurred. Please try again later.",
+        "not_found": "❌ Not found",
+        "access_denied": "🚫 Access denied"
+    },
+    
+    "admin": {
+        "panel": "🔐 <b>Admin Panel</b>",
+        "channels": "📢 Channels",
+        "packages": "📦 Packages",
+        "promos": "🎟 Promo Codes",
+        "users": "👥 Users",
+        "stats": "📊 Statistics",
+        "broadcast": "📨 Broadcast",
+        "settings": "⚙️ Settings"
+    }
+}

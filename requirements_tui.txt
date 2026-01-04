@@ -1,0 +1,5 @@
+# TUI Admin Panel Dependencies
+# Чат 6: Терминальная админ-панель
+
+textual>=0.47.0
+rich>=13.7.0
