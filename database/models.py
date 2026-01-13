@@ -102,6 +102,7 @@ class User(Base):
     
     # Статистика
     total_spent = Column(Float, default=0.0, nullable=False)
+    balance = Column(Float, default=0.0, nullable=False)  # Реферальный баланс
     referral_code = Column(String(32), unique=True, nullable=True)
     referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     

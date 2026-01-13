@@ -55,14 +55,23 @@ async def cmd_start(
     
     if user is None:
         # Новый пользователь
+        # Парсим реферальную ссылку
+        referred_by = None
+        if deep_link:
+            referred_by = await _parse_referral(session, deep_link)
+
         user = await UserCRUD.create(
             session,
             telegram_id=user_id,
             username=username,
             first_name=first_name,
             last_name=last_name,
-            referred_by=_parse_referral(deep_link) if deep_link else None
+            referred_by=referred_by
         )
+
+        # Уведомляем реферера о новом приглашённом
+        if referred_by:
+            await _notify_referrer(session, referred_by, user, message.bot)
         
         # Логируем активность
         await ActivityLogCRUD.log(
@@ -204,14 +213,43 @@ async def cmd_help(
 # 🔧 ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _parse_referral(deep_link: str) -> Optional[int]:
-    """Парсит реферальную ссылку и возвращает ID пригласившего."""
+async def _parse_referral(session: AsyncSession, deep_link: str) -> Optional[int]:
+    """Парсит реферальную ссылку и возвращает ID пригласившего пользователя."""
     if deep_link.startswith("ref_"):
-        try:
-            return int(deep_link.replace("ref_", ""))
-        except ValueError:
-            return None
+        referral_code = deep_link.replace("ref_", "")
+        # Ищем пользователя по реферальному коду
+        referrer = await UserCRUD.get_by_referral_code(session, referral_code)
+        if referrer:
+            return referrer.id
     return None
+
+
+async def _notify_referrer(session: AsyncSession, referrer_id: int, new_user, bot):
+    """Уведомляет реферера о новом приглашённом пользователе."""
+    try:
+        referrer = await UserCRUD.get_by_id(session, referrer_id)
+        if not referrer:
+            return
+
+        lang = referrer.language or "ru"
+        new_user_name = new_user.first_name or new_user.username or "Пользователь"
+
+        if lang == "ru":
+            text = (
+                f"🎉 <b>Новый реферал!</b>\n\n"
+                f"Пользователь <b>{new_user_name}</b> зарегистрировался по вашей ссылке.\n\n"
+                f"Вы получите бонус, когда он совершит первую покупку!"
+            )
+        else:
+            text = (
+                f"🎉 <b>New Referral!</b>\n\n"
+                f"User <b>{new_user_name}</b> registered using your link.\n\n"
+                f"You'll receive a bonus when they make their first purchase!"
+            )
+
+        await bot.send_message(referrer.telegram_id, text, parse_mode="HTML")
+    except Exception as e:
+        logger.warning(f"Failed to notify referrer {referrer_id}: {e}")
 
 
 async def _handle_deep_link(

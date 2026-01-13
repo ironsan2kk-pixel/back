@@ -453,6 +453,148 @@ async def callback_view_subscription(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 👥 РЕФЕРАЛЬНАЯ ПРОГРАММА
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.callback_query(F.data == "profile:referrals")
+async def callback_referrals(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    i18n: I18n
+):
+    """Показать реферальную программу."""
+    await callback.answer()
+
+    user = await UserCRUD.get_by_telegram_id(session, callback.from_user.id)
+    if not user:
+        return
+
+    lang = user.language or "ru"
+    bot_info = await callback.bot.get_me()
+    bot_username = bot_info.username
+
+    # Генерируем реферальную ссылку
+    referral_link = f"https://t.me/{bot_username}?start=ref_{user.referral_code}"
+
+    # Получаем статистику рефералов
+    stats = await UserCRUD.get_referral_stats(session, user.id)
+
+    # Получаем баланс пользователя
+    balance = user.balance or 0.0
+
+    if lang == "ru":
+        text = (
+            f"👥 <b>Реферальная программа</b>\n\n"
+            f"Приглашайте друзей и получайте <b>10%</b> от их первой покупки!\n\n"
+            f"💰 <b>Ваш баланс:</b> <b>${balance:.2f}</b>\n\n"
+            f"📊 <b>Ваша статистика:</b>\n"
+            f"├ Приглашено: <b>{stats['total_referrals']}</b> чел.\n"
+            f"├ С покупками: <b>{stats['referrals_with_purchases']}</b> чел.\n"
+            f"└ Потрачено рефералами: <b>${stats['total_referral_spending']:.2f}</b>\n\n"
+            f"🔗 <b>Ваша реферальная ссылка:</b>\n"
+            f"<code>{referral_link}</code>\n\n"
+            f"👆 Нажмите на ссылку, чтобы скопировать"
+        )
+    else:
+        text = (
+            f"👥 <b>Referral Program</b>\n\n"
+            f"Invite friends and get <b>10%</b> of their first purchase!\n\n"
+            f"💰 <b>Your Balance:</b> <b>${balance:.2f}</b>\n\n"
+            f"📊 <b>Your Statistics:</b>\n"
+            f"├ Invited: <b>{stats['total_referrals']}</b> people\n"
+            f"├ With purchases: <b>{stats['referrals_with_purchases']}</b> people\n"
+            f"└ Referrals spent: <b>${stats['total_referral_spending']:.2f}</b>\n\n"
+            f"🔗 <b>Your referral link:</b>\n"
+            f"<code>{referral_link}</code>\n\n"
+            f"👆 Tap the link to copy"
+        )
+
+    # Клавиатура
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+
+    # Кнопка "Поделиться"
+    share_text = "Привет! Присоединяйся к нашему боту:" if lang == "ru" else "Hi! Join our bot:"
+    share_url = f"https://t.me/share/url?url={referral_link}&text={share_text}"
+    builder.row(InlineKeyboardButton(
+        text="📤 Поделиться" if lang == "ru" else "📤 Share",
+        url=share_url
+    ))
+
+    # Кнопка "Мои рефералы" если есть рефералы
+    if stats['total_referrals'] > 0:
+        builder.row(InlineKeyboardButton(
+            text="👥 Мои рефералы" if lang == "ru" else "👥 My Referrals",
+            callback_data="profile:referrals:list"
+        ))
+
+    # Кнопка назад
+    builder.row(InlineKeyboardButton(
+        text="◀️ Назад" if lang == "ru" else "◀️ Back",
+        callback_data="menu:profile"
+    ))
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "profile:referrals:list")
+async def callback_referrals_list(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    i18n: I18n
+):
+    """Показать список рефералов."""
+    await callback.answer()
+
+    user = await UserCRUD.get_by_telegram_id(session, callback.from_user.id)
+    if not user:
+        return
+
+    lang = user.language or "ru"
+
+    # Получаем список рефералов
+    referrals = await UserCRUD.get_referrals(session, user.id, limit=20)
+
+    if not referrals:
+        text = "У вас пока нет рефералов." if lang == "ru" else "You don't have any referrals yet."
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_back_button("profile:referrals", lang),
+            parse_mode="HTML"
+        )
+        return
+
+    if lang == "ru":
+        text = f"👥 <b>Ваши рефералы ({len(referrals)}):</b>\n\n"
+    else:
+        text = f"👥 <b>Your Referrals ({len(referrals)}):</b>\n\n"
+
+    for i, ref in enumerate(referrals, 1):
+        name = ref.first_name or ref.username or "Пользователь"
+        date = ref.created_at.strftime("%d.%m.%Y")
+        spent = ref.total_spent
+
+        status = "💰" if spent > 0 else "⏳"
+        text += f"{i}. {status} <b>{name}</b>\n"
+        text += f"   └ {date}"
+        if spent > 0:
+            text += f" • ${spent:.2f}"
+        text += "\n"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_back_button("profile:referrals", lang),
+        parse_mode="HTML"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 🔧 ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ═══════════════════════════════════════════════════════════════════════════════
 

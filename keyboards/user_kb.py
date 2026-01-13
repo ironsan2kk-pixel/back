@@ -394,31 +394,34 @@ def get_profile_keyboard(
 ) -> InlineKeyboardMarkup:
     """Клавиатура профиля пользователя."""
     builder = InlineKeyboardBuilder()
-    
+
     texts = {
         "ru": {
             "subscriptions": "📋 Мои подписки",
             "history": "📜 История покупок",
             "extend": "🔄 Продлить подписку",
+            "referrals": "👥 Реферальная программа",
             "back": "◀️ Назад",
         },
         "en": {
             "subscriptions": "📋 My Subscriptions",
             "history": "📜 Purchase History",
             "extend": "🔄 Extend Subscription",
+            "referrals": "👥 Referral Program",
             "back": "◀️ Back",
         }
     }
     t = texts.get(lang, texts["ru"])
-    
+
     builder.row(InlineKeyboardButton(text=t["subscriptions"], callback_data="profile:subscriptions"))
     builder.row(InlineKeyboardButton(text=t["history"], callback_data="profile:history"))
-    
+    builder.row(InlineKeyboardButton(text=t["referrals"], callback_data="profile:referrals"))
+
     if subscriptions:
         builder.row(InlineKeyboardButton(text=t["extend"], callback_data="profile:extend"))
-    
+
     builder.row(InlineKeyboardButton(text=t["back"], callback_data="menu:back"))
-    
+
     return builder.as_markup()
 
 
