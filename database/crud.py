@@ -7,12 +7,15 @@
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, List, Tuple, Any
+from typing import Optional, List, Tuple, Any, Iterable
+import functools
+import inspect
 import secrets
 import string
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, desc
+from sqlalchemy import and_, or_, func, desc, String
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import (
     User, Channel, SubscriptionPlan, SubscriptionPackage, PackageChannel,
@@ -1518,14 +1521,1525 @@ class BroadcastCRUD:
             "sent_count": Broadcast.sent_count + sent,
             "failed_count": Broadcast.failed_count + failed
         })
-    
-    @staticmethod
-    def mark_completed(session: Session, broadcast_id: int) -> None:
-        """Отметить рассылку как завершённую."""
-        session.query(Broadcast).filter(Broadcast.id == broadcast_id).update({
-            "is_completed": True,
-            "completed_at": datetime.utcnow()
-        })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🔧 СОВМЕСТИМОСТЬ СО СТАРЫМИ ИНТЕРФЕЙСАМИ
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _normalize_subscription_type(value: Any) -> SubscriptionType:
+    if isinstance(value, SubscriptionType):
+        return value
+    if isinstance(value, str):
+        try:
+            return SubscriptionType(value)
+        except ValueError:
+            return SubscriptionType.CHANNEL
+    return SubscriptionType.CHANNEL
+
+
+def _duration_days_from_input(months: Optional[int] = None, days: Optional[int] = None) -> int:
+    if days is not None:
+        return int(days)
+    if months is None:
+        return 0
+    presets = {1: 30, 3: 90, 12: 365}
+    return presets.get(int(months), int(months) * 30)
+
+
+def _get_user_by_telegram(session: Session, telegram_id: int) -> Optional[User]:
+    return session.query(User).filter(User.telegram_id == telegram_id).first()
+
+
+def _ensure_user(session: Session, telegram_id: int) -> User:
+    user = _get_user_by_telegram(session, telegram_id)
+    if user:
+        return user
+    user = User(telegram_id=telegram_id, language=Language.RU)
+    session.add(user)
+    session.flush()
+    return user
+
+
+def _coerce_status(status: Any) -> PaymentStatus:
+    if isinstance(status, PaymentStatus):
+        return status
+    if isinstance(status, str):
+        return PaymentStatus(status)
+    return PaymentStatus.PENDING
+
+
+def _wrap_payment_status(status: Any) -> SubscriptionStatus:
+    if isinstance(status, SubscriptionStatus):
+        return status
+    if isinstance(status, str):
+        return SubscriptionStatus(status)
+    return SubscriptionStatus.ACTIVE
+
+
+def _usercrud_get_all(
+    session: Session,
+    offset: int = 0,
+    limit: int = 100,
+    skip: Optional[int] = None,
+    is_banned: Optional[bool] = None,
+    is_blocked: Optional[bool] = None,
+    is_active: Optional[bool] = None,
+    language: Optional[Language] = None,
+) -> List[User]:
+    query = session.query(User)
+    if skip is not None:
+        offset = skip
+    if is_banned is not None:
+        query = query.filter(User.is_blocked == is_banned)
+    if is_blocked is not None:
+        query = query.filter(User.is_blocked == is_blocked)
+    if is_active is not None:
+        query = query.filter(User.is_blocked == (not is_active))
+    if language is not None:
+        query = query.filter(User.language == language)
+    return query.order_by(desc(User.created_at)).offset(offset).limit(limit).all()
+
+
+def _usercrud_count_all(session: Session) -> int:
+    return session.query(func.count(User.id)).scalar() or 0
+
+
+def _usercrud_count_blocked(session: Session) -> int:
+    return session.query(func.count(User.id)).filter(User.is_blocked == True).scalar() or 0
+
+
+def _usercrud_count_banned(session: Session) -> int:
+    return _usercrud_count_blocked(session)
+
+
+def _usercrud_count_by_date_range(session: Session, start_date: datetime, end_date: Optional[datetime] = None) -> int:
+    query = session.query(func.count(User.id)).filter(User.created_at >= start_date)
+    if end_date:
+        query = query.filter(User.created_at <= end_date)
+    return query.scalar() or 0
+
+
+def _usercrud_count_with_active_subscription(session: Session) -> int:
+    subquery = session.query(UserSubscription.user_id).filter(
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+        or_(UserSubscription.expires_at.is_(None), UserSubscription.expires_at > datetime.utcnow())
+    )
+    return session.query(func.count(User.id)).filter(User.id.in_(subquery)).scalar() or 0
+
+
+def _usercrud_count_registered_today(session: Session) -> int:
+    today = datetime.utcnow().date()
+    return session.query(func.count(User.id)).filter(func.date(User.created_at) == today).scalar() or 0
+
+
+def _usercrud_count_registered_this_week(session: Session) -> int:
+    start = datetime.utcnow() - timedelta(days=7)
+    return _usercrud_count_by_date_range(session, start)
+
+
+def _usercrud_get_recent(session: Session, limit: int = 10) -> List[User]:
+    return session.query(User).order_by(desc(User.created_at)).limit(limit).all()
+
+
+def _usercrud_get_new(session: Session, days: int = 1) -> List[User]:
+    start = datetime.utcnow() - timedelta(days=days)
+    return session.query(User).filter(User.created_at >= start).order_by(desc(User.created_at)).all()
+
+
+def _usercrud_get_with_active_subscriptions(session: Session, offset: int = 0, limit: int = 100) -> List[User]:
+    active_subs = session.query(UserSubscription.user_id).filter(
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+        or_(UserSubscription.expires_at.is_(None), UserSubscription.expires_at > datetime.utcnow())
+    )
+    return session.query(User).filter(User.id.in_(active_subs)).order_by(desc(User.created_at)).offset(offset).limit(limit).all()
+
+
+def _usercrud_get_without_subscriptions(session: Session, offset: int = 0, limit: int = 100) -> List[User]:
+    subquery = session.query(UserSubscription.user_id)
+    return session.query(User).filter(~User.id.in_(subquery)).order_by(desc(User.created_at)).offset(offset).limit(limit).all()
+
+
+def _usercrud_get_with_expired_subscriptions(session: Session, offset: int = 0, limit: int = 100) -> List[User]:
+    expired_subs = session.query(UserSubscription.user_id).filter(
+        UserSubscription.status == SubscriptionStatus.EXPIRED
+    )
+    return session.query(User).filter(User.id.in_(expired_subs)).order_by(desc(User.created_at)).offset(offset).limit(limit).all()
+
+
+def _usercrud_get_by_channel(session: Session, channel_id: int) -> List[User]:
+    subquery = session.query(UserSubscription.user_id).filter(UserSubscription.channel_id == channel_id)
+    return session.query(User).filter(User.id.in_(subquery)).all()
+
+
+def _usercrud_get_total_spent(session: Session, user_id: int) -> float:
+    user = session.query(User).filter(User.id == user_id).first()
+    return float(user.total_spent) if user else 0.0
+
+
+def _usercrud_update(session: Session, user_id: int, **kwargs) -> Optional[User]:
+    user = session.query(User).filter(User.id == user_id).first()
+    if not user:
+        return None
+    if "is_banned" in kwargs:
+        kwargs["is_blocked"] = kwargs.pop("is_banned")
+    if "language_code" in kwargs:
+        kwargs["language"] = Language(kwargs.pop("language_code"))
+    for key, value in kwargs.items():
+        if hasattr(user, key):
+            setattr(user, key, value)
+    return user
+
+
+def _usercrud_search(session: Session, query: str, limit: int = 10) -> List[User]:
+    q = f"%{query}%"
+    base = session.query(User).filter(
+        or_(
+            User.username.ilike(q),
+            User.first_name.ilike(q),
+            User.last_name.ilike(q),
+            User.telegram_id.cast(String).ilike(q),
+        )
+    )
+    return base.limit(limit).all()
+
+
+def _usercrud_save_promo(session: Session, user_id: int, promo_code: str) -> None:
+    ActivityLogCRUD.log(
+        session,
+        user_id=user_id,
+        action="promo_saved",
+        details={"promo_code": promo_code},
+    )
+
+
+def _channelcrud_get_all(
+    session: Session,
+    order_by: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    include_inactive: Optional[bool] = None,
+) -> List[Channel]:
+    query = session.query(Channel)
+    if include_inactive is not None and not include_inactive:
+        query = query.filter(Channel.is_active == True)
+    if is_active is not None:
+        query = query.filter(Channel.is_active == is_active)
+    if order_by:
+        column = getattr(Channel, order_by, None)
+        if column is not None:
+            query = query.order_by(column)
+    return query.all()
+
+
+def _channelcrud_get_all_active(session: Session) -> List[Channel]:
+    return session.query(Channel).filter(Channel.is_active == True).order_by(Channel.sort_order).all()
+
+
+def _channelcrud_update(session: Session, channel_id: int, **kwargs) -> Optional[Channel]:
+    channel = session.query(Channel).filter(Channel.id == channel_id).first()
+    if not channel:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(channel, key):
+            setattr(channel, key, value)
+    return channel
+
+
+def _channelcrud_delete(session: Session, channel_id: int) -> bool:
+    channel = session.query(Channel).filter(Channel.id == channel_id).first()
+    if not channel:
+        return False
+    session.delete(channel)
+    return True
+
+
+def _channelcrud_get_top_by_subscriptions(session: Session, limit: int = 5) -> List[Channel]:
+    sub_counts = session.query(
+        UserSubscription.channel_id,
+        func.count(UserSubscription.id).label("count")
+    ).filter(UserSubscription.channel_id.isnot(None)).group_by(UserSubscription.channel_id).subquery()
+    return (
+        session.query(Channel)
+        .join(sub_counts, Channel.id == sub_counts.c.channel_id)
+        .order_by(desc(sub_counts.c.count))
+        .limit(limit)
+        .all()
+    )
+
+
+def _packagecrud_get_all(
+    session: Session,
+    is_active: Optional[bool] = None,
+) -> List[SubscriptionPackage]:
+    query = session.query(SubscriptionPackage)
+    if is_active is not None:
+        query = query.filter(SubscriptionPackage.is_active == is_active)
+    return query.order_by(SubscriptionPackage.sort_order).all()
+
+
+def _packagecrud_get_all_active(session: Session) -> List[SubscriptionPackage]:
+    return _packagecrud_get_all(session, is_active=True)
+
+
+def _packagecrud_get_channels(session: Session, package_id: int) -> List[Channel]:
+    package = session.query(SubscriptionPackage).filter(SubscriptionPackage.id == package_id).first()
+    if not package:
+        return []
+    return [pc.channel for pc in package.package_channels if pc.channel]
+
+
+def _packagecrud_get_package_channels(session: Session, package_id: int) -> List[PackageChannel]:
+    return session.query(PackageChannel).filter(PackageChannel.package_id == package_id).all()
+
+
+def _packagecrud_get_channels_count(session: Session, package_id: int) -> int:
+    return session.query(func.count(PackageChannel.id)).filter(PackageChannel.package_id == package_id).scalar() or 0
+
+
+def _packagecrud_set_channels(session: Session, package_id: int, channel_ids: Iterable[int]) -> None:
+    session.query(PackageChannel).filter(PackageChannel.package_id == package_id).delete()
+    for channel_id in channel_ids:
+        session.add(PackageChannel(package_id=package_id, channel_id=channel_id))
+
+
+def _packagecrud_update(session: Session, package_id: int, **kwargs) -> Optional[SubscriptionPackage]:
+    package = session.query(SubscriptionPackage).filter(SubscriptionPackage.id == package_id).first()
+    if not package:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(package, key):
+            setattr(package, key, value)
+    return package
+
+
+def _packagecrud_delete(session: Session, package_id: int) -> bool:
+    package = session.query(SubscriptionPackage).filter(SubscriptionPackage.id == package_id).first()
+    if not package:
+        return False
+    session.delete(package)
+    return True
+
+
+def _subscriptioncrud_get_user_active_subscriptions(session: Session, user_id: int) -> List[UserSubscription]:
+    return session.query(UserSubscription).filter(
+        UserSubscription.user_id == user_id,
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+        or_(UserSubscription.expires_at.is_(None), UserSubscription.expires_at > datetime.utcnow())
+    ).all()
+
+
+def _subscriptioncrud_get_expiring_in(session: Session, days: int = 3) -> List[UserSubscription]:
+    deadline = datetime.utcnow() + timedelta(days=days)
+    return session.query(UserSubscription).filter(
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+        UserSubscription.expires_at.isnot(None),
+        UserSubscription.expires_at <= deadline,
+        UserSubscription.expires_at > datetime.utcnow()
+    ).all()
+
+
+def _subscriptioncrud_set_expired(session: Session, subscription_id: int) -> None:
+    session.query(UserSubscription).filter(UserSubscription.id == subscription_id).update(
+        {"status": SubscriptionStatus.EXPIRED}
+    )
+
+
+def _subscriptioncrud_mark_notification_sent(session: Session, subscription_id: int, *args, **kwargs) -> None:
+    session.query(UserSubscription).filter(UserSubscription.id == subscription_id).update(
+        {"expiry_notified": True}
+    )
+
+
+def _subscriptioncrud_create_or_extend(
+    session: Session,
+    user_id: int,
+    channel_id: Optional[int] = None,
+    package_id: Optional[int] = None,
+    months: int = 0,
+    days: int = 0,
+    is_forever: bool = False,
+    promo_id: Optional[int] = None,
+) -> UserSubscription:
+    duration_days = 0 if is_forever else _duration_days_from_input(months=months, days=days)
+    target_filter = []
+    if channel_id:
+        target_filter = [UserSubscription.channel_id == channel_id]
+    if package_id:
+        target_filter = [UserSubscription.package_id == package_id]
+    subscription = session.query(UserSubscription).filter(
+        UserSubscription.user_id == user_id,
+        *target_filter,
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+    ).first()
+    if subscription:
+        if subscription.expires_at is None:
+            return subscription
+        base_date = max(subscription.expires_at, datetime.utcnow())
+        subscription.expires_at = None if is_forever else base_date + timedelta(days=duration_days)
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.expiry_notified = False
+        return subscription
+    expires_at = None if is_forever else datetime.utcnow() + timedelta(days=duration_days)
+    subscription_type = SubscriptionType.PACKAGE if package_id else SubscriptionType.CHANNEL
+    subscription = UserSubscription(
+        user_id=user_id,
+        subscription_type=subscription_type,
+        channel_id=channel_id,
+        package_id=package_id,
+        status=SubscriptionStatus.ACTIVE,
+        expires_at=expires_at,
+        is_trial=False,
+    )
+    session.add(subscription)
+    session.flush()
+    return subscription
+
+
+def _subscriptioncrud_extend(
+    session: Session,
+    subscription_id: int,
+    months: int = 0,
+    days: int = 0,
+) -> Optional[UserSubscription]:
+    subscription = session.query(UserSubscription).filter(UserSubscription.id == subscription_id).first()
+    if not subscription:
+        return None
+    duration_days = _duration_days_from_input(months=months, days=days)
+    if subscription.expires_at is None:
+        return subscription
+    base_date = max(subscription.expires_at, datetime.utcnow())
+    subscription.expires_at = base_date + timedelta(days=duration_days)
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.expiry_notified = False
+    return subscription
+
+
+def _subscriptioncrud_add_bonus_days(session: Session, subscription_id: int, days: int) -> None:
+    subscription = session.query(UserSubscription).filter(UserSubscription.id == subscription_id).first()
+    if subscription and subscription.expires_at:
+        subscription.expires_at = subscription.expires_at + timedelta(days=days)
+
+
+def _subscriptioncrud_count_active(session: Session) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_by_channel(session: Session, channel_id: int) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(UserSubscription.channel_id == channel_id).scalar() or 0
+
+
+def _subscriptioncrud_count_active_by_channel(session: Session, channel_id: int) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.channel_id == channel_id,
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_by_package(session: Session, package_id: int) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(UserSubscription.package_id == package_id).scalar() or 0
+
+
+def _subscriptioncrud_count_active_by_package(session: Session, package_id: int) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.package_id == package_id,
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_new_by_date(session: Session, date: datetime) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(func.date(UserSubscription.created_at) == date.date()).scalar() or 0
+
+
+def _subscriptioncrud_count_expired_by_date(session: Session, date: datetime) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.status == SubscriptionStatus.EXPIRED,
+        func.date(UserSubscription.updated_at) == date.date(),
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_new_in_period(session: Session, start_date: datetime, end_date: datetime) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.created_at >= start_date,
+        UserSubscription.created_at <= end_date,
+    ).scalar() or 0
+
+
+def _subscriptioncrud_get_active_by_user(session: Session, telegram_id: int) -> List[UserSubscription]:
+    user = _get_user_by_telegram(session, telegram_id)
+    if not user:
+        return []
+    return _subscriptioncrud_get_user_active_subscriptions(session, user.id)
+
+
+def _subscriptioncrud_get_all_by_user(session: Session, telegram_id: int) -> List[UserSubscription]:
+    user = _get_user_by_telegram(session, telegram_id)
+    if not user:
+        return []
+    return session.query(UserSubscription).filter(UserSubscription.user_id == user.id).all()
+
+
+def _subscriptioncrud_has_active(session: Session, telegram_id: int) -> bool:
+    user = _get_user_by_telegram(session, telegram_id)
+    if not user:
+        return False
+    return bool(_subscriptioncrud_get_user_active_subscriptions(session, user.id))
+
+
+def _subscriptioncrud_deactivate_all_by_user(session: Session, telegram_id: int) -> None:
+    user = _get_user_by_telegram(session, telegram_id)
+    if not user:
+        return
+    session.query(UserSubscription).filter(UserSubscription.user_id == user.id).update(
+        {"status": SubscriptionStatus.CANCELLED}
+    )
+
+
+def _subscriptioncrud_update(session: Session, subscription_id: int, **kwargs) -> Optional[UserSubscription]:
+    subscription = session.query(UserSubscription).filter(UserSubscription.id == subscription_id).first()
+    if not subscription:
+        return None
+    if "is_active" in kwargs:
+        subscription.status = SubscriptionStatus.ACTIVE if kwargs.pop("is_active") else SubscriptionStatus.CANCELLED
+    for key, value in kwargs.items():
+        if hasattr(subscription, key):
+            setattr(subscription, key, value)
+    return subscription
+
+
+def _subscriptioncrud_create(
+    session: Session,
+    user_telegram_id: int,
+    channel_id: Optional[int] = None,
+    package_id: Optional[int] = None,
+    expires_at: Optional[datetime] = None,
+    is_active: bool = True,
+    is_trial: bool = False,
+) -> UserSubscription:
+    user = _ensure_user(session, user_telegram_id)
+    subscription_type = SubscriptionType.PACKAGE if package_id else SubscriptionType.CHANNEL
+    subscription = UserSubscription(
+        user_id=user.id,
+        subscription_type=subscription_type,
+        channel_id=channel_id,
+        package_id=package_id,
+        status=SubscriptionStatus.ACTIVE if is_active else SubscriptionStatus.CANCELLED,
+        expires_at=expires_at,
+        is_trial=is_trial,
+    )
+    session.add(subscription)
+    session.flush()
+    return subscription
+
+
+def _subscriptioncrud_delete_old_expired(session: Session, days: int = 90) -> int:
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    deleted = session.query(UserSubscription).filter(
+        UserSubscription.status == SubscriptionStatus.EXPIRED,
+        UserSubscription.updated_at < cutoff,
+    ).delete()
+    return deleted
+
+
+def _paymentcrud_create(
+    session: Session,
+    user_id: Optional[int] = None,
+    invoice_id: Optional[int] = None,
+    amount: Optional[float] = None,
+    subscription_type: Optional[Any] = None,
+    duration_days: Optional[int] = None,
+    channel_id: Optional[int] = None,
+    package_id: Optional[int] = None,
+    plan_id: Optional[int] = None,
+    original_amount: Optional[float] = None,
+    promocode_id: Optional[int] = None,
+    discount_amount: float = 0.0,
+    pay_url: Optional[str] = None,
+    expires_at: Optional[datetime] = None,
+    status: Optional[Any] = None,
+    **kwargs,
+) -> Payment:
+    if "payment_type" in kwargs and subscription_type is None:
+        subscription_type = kwargs["payment_type"]
+    if "item_id" in kwargs:
+        if subscription_type == "package":
+            package_id = kwargs["item_id"]
+        else:
+            channel_id = kwargs["item_id"]
+    if "months" in kwargs and duration_days is None:
+        duration_days = _duration_days_from_input(months=kwargs.get("months"))
+    if "promo_code" in kwargs and promocode_id is None:
+        promo = PromocodeCRUD.get_by_code(session, kwargs["promo_code"])
+        promocode_id = promo.id if promo else None
+    if user_id is None and "user_telegram_id" in kwargs:
+        user = _ensure_user(session, kwargs["user_telegram_id"])
+        user_id = user.id
+    subscription_type = _normalize_subscription_type(subscription_type or SubscriptionType.CHANNEL)
+    duration_days = duration_days or 0
+    payment = Payment(
+        user_id=user_id,
+        invoice_id=invoice_id,
+        amount=amount or 0.0,
+        original_amount=original_amount or amount or 0.0,
+        subscription_type=subscription_type,
+        channel_id=channel_id,
+        package_id=package_id,
+        plan_id=plan_id,
+        duration_days=duration_days,
+        promocode_id=promocode_id,
+        discount_amount=discount_amount,
+        pay_url=pay_url,
+        expires_at=expires_at,
+        status=_coerce_status(status) if status is not None else PaymentStatus.PENDING,
+    )
+    session.add(payment)
+    session.flush()
+    return payment
+
+
+def _paymentcrud_update_status(session: Session, payment_id: int, status: Any) -> Optional[Payment]:
+    payment = session.query(Payment).filter(Payment.id == payment_id).first()
+    if payment:
+        payment.status = _coerce_status(status)
+    return payment
+
+
+def _paymentcrud_update_invoice(session: Session, payment_id: int, invoice_id: Optional[int] = None, invoice_url: Optional[str] = None) -> Optional[Payment]:
+    payment = session.query(Payment).filter(Payment.id == payment_id).first()
+    if payment:
+        payment.invoice_id = invoice_id
+        payment.pay_url = invoice_url
+    return payment
+
+
+def _paymentcrud_apply_promo(session: Session, payment_id: int, promocode_id: int, discount_amount: float = 0.0) -> Optional[Payment]:
+    payment = session.query(Payment).filter(Payment.id == payment_id).first()
+    if payment:
+        payment.promocode_id = promocode_id
+        payment.discount_amount = discount_amount
+    return payment
+
+
+def _paymentcrud_get_recent(session: Session, limit: int = 10) -> List[Payment]:
+    return session.query(Payment).order_by(desc(Payment.created_at)).limit(limit).all()
+
+
+def _paymentcrud_get_total_by_user(session: Session, telegram_id: int) -> float:
+    user = _get_user_by_telegram(session, telegram_id)
+    if not user:
+        return 0.0
+    total = session.query(func.sum(Payment.amount)).filter(
+        Payment.user_id == user.id,
+        Payment.status == PaymentStatus.PAID
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_get_by_date_range(session: Session, start_date: datetime, end_date: datetime) -> List[Payment]:
+    return session.query(Payment).filter(
+        Payment.created_at >= start_date,
+        Payment.created_at <= end_date,
+    ).all()
+
+
+def _paymentcrud_count_pending(session: Session) -> int:
+    return session.query(func.count(Payment.id)).filter(Payment.status == PaymentStatus.PENDING).scalar() or 0
+
+
+def _paymentcrud_sum_by_date(session: Session, date: datetime) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(func.date(Payment.paid_at) == date.date()).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_count_by_date(session: Session, date: datetime) -> int:
+    return session.query(func.count(Payment.id)).filter(func.date(Payment.paid_at) == date.date()).scalar() or 0
+
+
+def _paymentcrud_sum_in_period(session: Session, start_date: datetime, end_date: datetime) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(
+        Payment.paid_at >= start_date,
+        Payment.paid_at <= end_date,
+        Payment.status == PaymentStatus.PAID
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_count_in_period(session: Session, start_date: datetime, end_date: datetime) -> int:
+    return session.query(func.count(Payment.id)).filter(
+        Payment.paid_at >= start_date,
+        Payment.paid_at <= end_date,
+        Payment.status == PaymentStatus.PAID
+    ).scalar() or 0
+
+
+def _paymentcrud_delete_unpaid_old(session: Session, days: int = 7) -> int:
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    deleted = session.query(Payment).filter(
+        Payment.status == PaymentStatus.PENDING,
+        Payment.created_at < cutoff
+    ).delete()
+    return deleted
+
+
+def _paymentcrud_get_pending(session: Session, hours: Optional[int] = None) -> List[Payment]:
+    query = session.query(Payment).filter(Payment.status == PaymentStatus.PENDING)
+    if hours is not None:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        query = query.filter(Payment.created_at >= cutoff)
+    return query.all()
+
+
+def _paymentcrud_get_expired_pending(session: Session, now: datetime) -> List[Payment]:
+    return session.query(Payment).filter(
+        Payment.status == PaymentStatus.PENDING,
+        Payment.expires_at.isnot(None),
+        Payment.expires_at < now,
+    ).all()
+
+
+def _promocodecrud_get_valid_promo(session: Session, code: str) -> Optional[Promocode]:
+    promo = PromocodeCRUD.get_by_code(session, code)
+    if not promo or not promo.is_valid:
+        return None
+    return promo
+
+
+def _promocodecrud_is_used_by_user(session: Session, promocode_id: int, user_id: int) -> bool:
+    return session.query(PromocodeUsage).filter(
+        PromocodeUsage.promocode_id == promocode_id,
+        PromocodeUsage.user_id == user_id,
+    ).first() is not None
+
+
+def _promocodecrud_mark_used(session: Session, promocode_id: int, user_id: int, discount_amount: float = 0.0) -> PromocodeUsage:
+    return PromocodeCRUD.use(session, promocode_id, user_id, discount_amount=discount_amount)
+
+
+def _promocru_get_all(session: Session, offset: int = 0, limit: int = 100) -> List[Promocode]:
+    return session.query(Promocode).order_by(desc(Promocode.created_at)).offset(offset).limit(limit).all()
+
+
+def _promocru_get_active(session: Session, offset: int = 0, limit: int = 100) -> List[Promocode]:
+    return session.query(Promocode).filter(Promocode.is_active == True).order_by(desc(Promocode.created_at)).offset(offset).limit(limit).all()
+
+
+def _promocru_get_expired(session: Session, offset: int = 0, limit: int = 100) -> List[Promocode]:
+    now = datetime.utcnow()
+    return session.query(Promocode).filter(Promocode.valid_until.isnot(None), Promocode.valid_until < now).order_by(desc(Promocode.created_at)).offset(offset).limit(limit).all()
+
+
+def _promocru_get_fully_used(session: Session, offset: int = 0, limit: int = 100) -> List[Promocode]:
+    return session.query(Promocode).filter(
+        Promocode.max_uses.isnot(None),
+        Promocode.current_uses >= Promocode.max_uses
+    ).order_by(desc(Promocode.created_at)).offset(offset).limit(limit).all()
+
+
+def _promocru_count_all(session: Session) -> int:
+    return session.query(func.count(Promocode.id)).scalar() or 0
+
+
+def _promocru_count_active(session: Session) -> int:
+    return session.query(func.count(Promocode.id)).filter(Promocode.is_active == True).scalar() or 0
+
+
+def _promocru_count_expired(session: Session) -> int:
+    now = datetime.utcnow()
+    return session.query(func.count(Promocode.id)).filter(Promocode.valid_until.isnot(None), Promocode.valid_until < now).scalar() or 0
+
+
+def _promocru_count_fully_used(session: Session) -> int:
+    return session.query(func.count(Promocode.id)).filter(
+        Promocode.max_uses.isnot(None),
+        Promocode.current_uses >= Promocode.max_uses
+    ).scalar() or 0
+
+
+def _promocru_get_most_used(session: Session, limit: int = 5) -> List[Promocode]:
+    return session.query(Promocode).order_by(desc(Promocode.current_uses)).limit(limit).all()
+
+
+def _promocru_create(
+    session: Session,
+    code: str,
+    discount_percent: Optional[float] = None,
+    discount_amount: Optional[float] = None,
+    bonus_days: Optional[int] = None,
+    max_uses: Optional[int] = None,
+    channel_id: Optional[int] = None,
+    package_id: Optional[int] = None,
+    expires_at: Optional[datetime] = None,
+    is_active: bool = True,
+) -> Promocode:
+    if discount_percent is not None:
+        promo_type = PromocodeType.PERCENT
+        value = discount_percent
+    elif discount_amount is not None:
+        promo_type = PromocodeType.FIXED
+        value = discount_amount
+    elif bonus_days is not None:
+        promo_type = PromocodeType.FREE_DAYS
+        value = bonus_days
+    else:
+        promo_type = PromocodeType.FREE_ACCESS
+        value = 0
+    promo = PromocodeCRUD.create(
+        session,
+        code=code,
+        promo_type=promo_type,
+        value=value,
+        max_uses=max_uses,
+        channel_id=channel_id,
+        package_id=package_id,
+        valid_until=expires_at,
+        one_per_user=True,
+    )
+    promo.is_active = is_active
+    return promo
+
+
+def _promocru_update(session: Session, promo_id: int, **kwargs) -> Optional[Promocode]:
+    promo = session.query(Promocode).filter(Promocode.id == promo_id).first()
+    if not promo:
+        return None
+    if "expires_at" in kwargs:
+        promo.valid_until = kwargs.pop("expires_at")
+    if "discount_percent" in kwargs and kwargs["discount_percent"] is not None:
+        promo.type = PromocodeType.PERCENT
+        promo.value = kwargs.pop("discount_percent")
+    if "discount_amount" in kwargs and kwargs["discount_amount"] is not None:
+        promo.type = PromocodeType.FIXED
+        promo.value = kwargs.pop("discount_amount")
+    if "bonus_days" in kwargs and kwargs["bonus_days"] is not None:
+        promo.type = PromocodeType.FREE_DAYS
+        promo.value = kwargs.pop("bonus_days")
+    for key, value in kwargs.items():
+        if hasattr(promo, key):
+            setattr(promo, key, value)
+    return promo
+
+
+def _promocru_delete(session: Session, promo_id: int) -> bool:
+    promo = session.query(Promocode).filter(Promocode.id == promo_id).first()
+    if not promo:
+        return False
+    session.delete(promo)
+    return True
+
+
+def _promousage_count_by_period(session: Session, start_date: datetime, end_date: datetime) -> int:
+    return session.query(func.count(PromocodeUsage.id)).filter(
+        PromocodeUsage.used_at >= start_date,
+        PromocodeUsage.used_at <= end_date,
+    ).scalar() or 0
+
+
+def _promousage_count_today(session: Session) -> int:
+    today = datetime.utcnow().date()
+    return session.query(func.count(PromocodeUsage.id)).filter(func.date(PromocodeUsage.used_at) == today).scalar() or 0
+
+
+def _promousage_count_this_week(session: Session) -> int:
+    start = datetime.utcnow() - timedelta(days=7)
+    return _promousage_count_by_period(session, start, datetime.utcnow())
+
+
+def _promousage_count_this_month(session: Session) -> int:
+    start = datetime.utcnow() - timedelta(days=30)
+    return _promousage_count_by_period(session, start, datetime.utcnow())
+
+
+def _promousage_count_all(session: Session) -> int:
+    return session.query(func.count(PromocodeUsage.id)).scalar() or 0
+
+
+def _promousage_get_by_promo(session: Session, promo_id: int, limit: int = 10) -> List[PromocodeUsage]:
+    return session.query(PromocodeUsage).filter(PromocodeUsage.promocode_id == promo_id).order_by(desc(PromocodeUsage.used_at)).limit(limit).all()
+
+
+def _promocru_get_total_discount_by_period(session: Session, start_date: datetime, end_date: datetime) -> float:
+    total = session.query(func.sum(PromocodeUsage.discount_amount)).filter(
+        PromocodeUsage.used_at >= start_date,
+        PromocodeUsage.used_at <= end_date,
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _promocru_get_total_discount(session: Session) -> float:
+    total = session.query(func.sum(PromocodeUsage.discount_amount)).scalar() or 0.0
+    return float(total)
+
+
+def _promocru_count_total_usages(session: Session) -> int:
+    return session.query(func.count(PromocodeUsage.id)).scalar() or 0
+
+
+def _usercrud_mark_as_blocked(session: Session, telegram_id: int) -> None:
+    user = session.query(User).filter(User.telegram_id == telegram_id).first()
+    if user:
+        user.is_blocked = True
+
+
+def _channelcrud_count_all(session: Session) -> int:
+    return session.query(func.count(Channel.id)).scalar() or 0
+
+
+def _channelcrud_count_active(session: Session) -> int:
+    return session.query(func.count(Channel.id)).filter(Channel.is_active == True).scalar() or 0
+
+
+def _packagecrud_count_all(session: Session) -> int:
+    return session.query(func.count(SubscriptionPackage.id)).scalar() or 0
+
+
+def _packagecrud_count_active(session: Session) -> int:
+    return session.query(func.count(SubscriptionPackage.id)).filter(SubscriptionPackage.is_active == True).scalar() or 0
+
+
+def _subscriptioncrud_count_all(session: Session) -> int:
+    return session.query(func.count(UserSubscription.id)).scalar() or 0
+
+
+def _subscriptioncrud_count_by_date_range(session: Session, start_date: datetime, end_date: datetime) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.created_at >= start_date,
+        UserSubscription.created_at <= end_date,
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_expired_in_range(session: Session, start_date: datetime, end_date: datetime) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.status == SubscriptionStatus.EXPIRED,
+        UserSubscription.updated_at >= start_date,
+        UserSubscription.updated_at <= end_date,
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_by_channel_and_period(session: Session, channel_id: int, start_date: datetime, end_date: datetime) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.channel_id == channel_id,
+        UserSubscription.created_at >= start_date,
+        UserSubscription.created_at <= end_date,
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_by_package_and_period(session: Session, package_id: int, start_date: datetime, end_date: datetime) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.package_id == package_id,
+        UserSubscription.created_at >= start_date,
+        UserSubscription.created_at <= end_date,
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_by_package_and_tier(session: Session, package_id: int, duration_days: int) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.package_id == package_id
+    ).scalar() or 0
+
+
+def _subscriptioncrud_count_renewals_by_channel(session: Session, channel_id: int) -> int:
+    return 0
+
+
+def _subscriptioncrud_count_churned_by_channel_and_period(session: Session, channel_id: int, start_date: datetime, end_date: datetime) -> int:
+    return 0
+
+
+def _subscriptioncrud_get_avg_duration_by_channel(session: Session, channel_id: int) -> float:
+    return 0.0
+
+
+def _subscriptioncrud_count_active_by_user(session: Session, user_id: int) -> int:
+    return session.query(func.count(UserSubscription.id)).filter(
+        UserSubscription.user_id == user_id,
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+    ).scalar() or 0
+
+
+def _subscriptioncrud_get_all(session: Session) -> List[UserSubscription]:
+    return session.query(UserSubscription).order_by(desc(UserSubscription.created_at)).all()
+
+
+def _paymentcrud_get_revenue_by_period(session: Session, start_date: datetime, end_date: datetime) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(
+        Payment.paid_at >= start_date,
+        Payment.paid_at <= end_date,
+        Payment.status == PaymentStatus.PAID,
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_count_completed(session: Session) -> int:
+    return session.query(func.count(Payment.id)).filter(Payment.status == PaymentStatus.PAID).scalar() or 0
+
+
+def _paymentcrud_get_total_revenue(session: Session) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(Payment.status == PaymentStatus.PAID).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_get_payment_methods_stats(session: Session) -> dict:
+    rows = session.query(Payment.crypto_currency, func.count(Payment.id)).group_by(Payment.crypto_currency).all()
+    return {currency or "unknown": count for currency, count in rows}
+
+
+def _paymentcrud_count_unique_payers(session: Session) -> int:
+    return session.query(func.count(func.distinct(Payment.user_id))).filter(Payment.status == PaymentStatus.PAID).scalar() or 0
+
+
+def _paymentcrud_count_by_user(session: Session, user_id: int) -> int:
+    return session.query(func.count(Payment.id)).filter(Payment.user_id == user_id).scalar() or 0
+
+
+def _paymentcrud_get_user_total_spent(session: Session, user_id: int) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(Payment.user_id == user_id, Payment.status == PaymentStatus.PAID).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_get_all_completed(session: Session) -> List[Payment]:
+    return session.query(Payment).filter(Payment.status == PaymentStatus.PAID).order_by(desc(Payment.paid_at)).all()
+
+
+def _paymentcrud_get_channel_revenue_by_period(session: Session, channel_id: int, start_date: datetime, end_date: datetime) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(
+        Payment.channel_id == channel_id,
+        Payment.paid_at >= start_date,
+        Payment.paid_at <= end_date,
+        Payment.status == PaymentStatus.PAID,
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_get_channel_total_revenue(session: Session, channel_id: int) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(
+        Payment.channel_id == channel_id,
+        Payment.status == PaymentStatus.PAID,
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_get_package_revenue_by_period(session: Session, package_id: int, start_date: datetime, end_date: datetime) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(
+        Payment.package_id == package_id,
+        Payment.paid_at >= start_date,
+        Payment.paid_at <= end_date,
+        Payment.status == PaymentStatus.PAID,
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _paymentcrud_get_package_total_revenue(session: Session, package_id: int) -> float:
+    total = session.query(func.sum(Payment.amount)).filter(
+        Payment.package_id == package_id,
+        Payment.status == PaymentStatus.PAID,
+    ).scalar() or 0.0
+    return float(total)
+
+
+def _pricingcrud_get_by_target(session: Session, target_type: str, target_id: int):
+    if target_type == "package":
+        return session.query(PackagePlan).filter(PackagePlan.package_id == target_id).all()
+    return session.query(SubscriptionPlan).filter(SubscriptionPlan.channel_id == target_id).all()
+
+
+def _pricingcrud_get_by_target_and_duration(session: Session, target_type: str, target_id: int, duration_days: int):
+    if target_type == "package":
+        return session.query(PackagePlan).filter(
+            PackagePlan.package_id == target_id,
+            PackagePlan.duration_days == duration_days,
+        ).first()
+    return session.query(SubscriptionPlan).filter(
+        SubscriptionPlan.channel_id == target_id,
+        SubscriptionPlan.duration_days == duration_days,
+    ).first()
+
+
+def _pricingcrud_get_by_id(session: Session, pricing_id: int):
+    plan = session.query(SubscriptionPlan).filter(SubscriptionPlan.id == pricing_id).first()
+    if plan:
+        return plan
+    return session.query(PackagePlan).filter(PackagePlan.id == pricing_id).first()
+
+
+def _pricingcrud_create(session: Session, target_type: str, target_id: int, duration_days: int, price_usdt: float, label_ru: Optional[str] = None, label_en: Optional[str] = None, is_active: bool = True):
+    if target_type == "package":
+        plan = PackagePlan(
+            package_id=target_id,
+            duration_days=duration_days,
+            price=price_usdt,
+            name_ru=label_ru or f"{duration_days} дней",
+            name_en=label_en,
+            is_active=is_active,
+        )
+    else:
+        plan = SubscriptionPlan(
+            channel_id=target_id,
+            duration_days=duration_days,
+            price=price_usdt,
+            name_ru=label_ru or f"{duration_days} дней",
+            name_en=label_en,
+            is_active=is_active,
+        )
+    session.add(plan)
+    session.flush()
+    return plan
+
+
+def _pricingcrud_update(session: Session, pricing_id: int, **kwargs):
+    plan = _pricingcrud_get_by_id(session, pricing_id)
+    if not plan:
+        return None
+    if "price_usdt" in kwargs:
+        kwargs["price"] = kwargs.pop("price_usdt")
+    if "label_ru" in kwargs:
+        kwargs["name_ru"] = kwargs.pop("label_ru")
+    if "label_en" in kwargs:
+        kwargs["name_en"] = kwargs.pop("label_en")
+    for key, value in kwargs.items():
+        if hasattr(plan, key):
+            setattr(plan, key, value)
+    return plan
+
+
+def _pricingcrud_delete(session: Session, pricing_id: int) -> bool:
+    plan = _pricingcrud_get_by_id(session, pricing_id)
+    if not plan:
+        return False
+    session.delete(plan)
+    return True
+
+
+def _settingscrud_get(session: Session, key: str, default: Any = None) -> Any:
+    return BotSettingsCRUD.get(session, key, default)
+
+
+def _settingscrud_set(session: Session, key: str, value: Any, value_type: str = "string", description: str = None) -> BotSettings:
+    return BotSettingsCRUD.set(session, key, value, value_type=value_type, description=description)
+
+
+def _settingscrud_get_all(session: Session) -> List[BotSettings]:
+    return session.query(BotSettings).all()
+
+
+def _admincrud_get_all(session: Session) -> List[User]:
+    return session.query(User).filter(User.is_admin == True).all()
+
+
+def _admincrud_get_by_telegram_id(session: Session, telegram_id: int) -> Optional[User]:
+    return session.query(User).filter(User.telegram_id == telegram_id, User.is_admin == True).first()
+
+
+def _admincrud_create(session: Session, telegram_id: int) -> User:
+    user = _ensure_user(session, telegram_id)
+    user.is_admin = True
+    return user
+
+
+def _admincrud_delete(session: Session, telegram_id: int) -> bool:
+    user = session.query(User).filter(User.telegram_id == telegram_id, User.is_admin == True).first()
+    if not user:
+        return False
+    user.is_admin = False
+    return True
+
+
+def _statisticscrud_get_dashboard_stats(session: Session) -> dict:
+    return {
+        "users_total": _usercrud_count_all(session),
+        "subscriptions_active": _subscriptioncrud_count_active(session),
+        "payments_total": session.query(func.count(Payment.id)).scalar() or 0,
+        "payments_sum": session.query(func.sum(Payment.amount)).scalar() or 0.0,
+    }
+
+
+def _statisticscrud_get_quick_stats(session: Session) -> dict:
+    return {
+        "users_today": _usercrud_count_registered_today(session),
+        "payments_today": _paymentcrud_count_by_date(session, datetime.utcnow()),
+        "revenue_today": _paymentcrud_sum_by_date(session, datetime.utcnow()),
+    }
+
+
+def _statscrud_save_daily(session: Session, stats: dict) -> DailyStats:
+    today = datetime.utcnow().date()
+    record = session.query(DailyStats).filter(func.date(DailyStats.date) == today).first()
+    if not record:
+        record = DailyStats(date=datetime.utcnow())
+        session.add(record)
+    for key, value in stats.items():
+        if hasattr(record, key):
+            setattr(record, key, value)
+    session.flush()
+    return record
+
+
+def _broadcastcrud_create(
+    session: Session,
+    admin_id: Optional[int] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    text: str = "",
+    media_type: Optional[str] = None,
+    media_file_id: Optional[str] = None,
+    sent_count: int = 0,
+    failed_count: int = 0,
+    **kwargs,
+) -> Broadcast:
+    broadcast = Broadcast(
+        created_by=admin_id,
+        target_type=target_type,
+        target_id=target_id,
+        text=text,
+        text_ru=text or kwargs.get("text_ru") or "",
+        text_en=kwargs.get("text_en"),
+        media_type=media_type,
+        media_file_id=media_file_id,
+        sent_count=sent_count,
+        failed_count=failed_count,
+        status=kwargs.get("status", "completed"),
+    )
+    session.add(broadcast)
+    session.flush()
+    return broadcast
+
+
+def _broadcastcrud_create_scheduled(
+    session: Session,
+    admin_id: Optional[int],
+    target_type: str,
+    target_id: Optional[int],
+    text: str,
+    media_type: Optional[str],
+    media_file_id: Optional[str],
+    scheduled_at: datetime,
+) -> Broadcast:
+    broadcast = _broadcastcrud_create(
+        session,
+        admin_id=admin_id,
+        target_type=target_type,
+        target_id=target_id,
+        text=text,
+        media_type=media_type,
+        media_file_id=media_file_id,
+        sent_count=0,
+        failed_count=0,
+        status="scheduled",
+    )
+    broadcast.scheduled_at = scheduled_at
+    return broadcast
+
+
+def _broadcastcrud_get_pending_scheduled(session: Session) -> List[Broadcast]:
+    now = datetime.utcnow()
+    return session.query(Broadcast).filter(
+        Broadcast.status == "scheduled",
+        Broadcast.scheduled_at <= now,
+    ).all()
+
+
+def _broadcastcrud_get_scheduled(session: Session) -> List[Broadcast]:
+    return session.query(Broadcast).filter(Broadcast.status == "scheduled").order_by(Broadcast.scheduled_at).all()
+
+
+def _broadcastcrud_get_recent(session: Session, limit: int = 10) -> List[Broadcast]:
+    return session.query(Broadcast).order_by(desc(Broadcast.created_at)).limit(limit).all()
+
+
+def _broadcastcrud_get_last(session: Session) -> Optional[Broadcast]:
+    return session.query(Broadcast).order_by(desc(Broadcast.created_at)).first()
+
+
+def _broadcastcrud_count_all(session: Session) -> int:
+    return session.query(func.count(Broadcast.id)).scalar() or 0
+
+
+def _broadcastcrud_update_status(
+    session: Session,
+    broadcast_id: int,
+    status: str,
+    sent_count: Optional[int] = None,
+    failed_count: Optional[int] = None,
+) -> Optional[Broadcast]:
+    broadcast = session.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if broadcast:
+        broadcast.status = status
+        if sent_count is not None:
+            broadcast.sent_count = sent_count
+        if failed_count is not None:
+            broadcast.failed_count = failed_count
+    return broadcast
+
+
+def _broadcastcrud_delete_old(session: Session, days: int = 30) -> int:
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    deleted = session.query(Broadcast).filter(Broadcast.created_at < cutoff).delete()
+    return deleted
+
+
+def _broadcastcrud_mark_completed(session: Session, broadcast_id: int) -> None:
+    session.query(Broadcast).filter(Broadcast.id == broadcast_id).update({
+        "is_completed": True,
+        "completed_at": datetime.utcnow(),
+        "status": "completed",
+    })
+
+
+class SubscriptionCRUD(UserSubscriptionCRUD):
+    """Совместимость: алиас UserSubscriptionCRUD."""
+
+
+class PromoCodeCRUD(PromocodeCRUD):
+    """Совместимость: старый интерфейс промокодов."""
+
+
+class PromoCRUD(PromocodeCRUD):
+    """Совместимость: админский интерфейс промокодов."""
+
+
+class PromoUsageCRUD:
+    """Совместимость: использование промокодов."""
+
+
+class PricingCRUD:
+    """Совместимость: управление тарифами."""
+
+
+class SettingsCRUD(BotSettingsCRUD):
+    """Совместимость: настройки бота."""
+
+
+class AdminCRUD:
+    """Совместимость: управление админами."""
+
+
+class StatisticsCRUD:
+    """Совместимость: статистика для CLI/TUI."""
+
+
+# Привязка дополнительных методов
+UserCRUD.get_all = staticmethod(_usercrud_get_all)
+UserCRUD.count_all = staticmethod(_usercrud_count_all)
+UserCRUD.count_blocked = staticmethod(_usercrud_count_blocked)
+UserCRUD.count_banned = staticmethod(_usercrud_count_banned)
+UserCRUD.count_with_active_subscription = staticmethod(_usercrud_count_with_active_subscription)
+UserCRUD.count_registered_today = staticmethod(_usercrud_count_registered_today)
+UserCRUD.count_registered_this_week = staticmethod(_usercrud_count_registered_this_week)
+UserCRUD.count_by_date_range = staticmethod(_usercrud_count_by_date_range)
+UserCRUD.count_new_by_date = staticmethod(lambda session, date: _usercrud_count_by_date_range(session, date, date))
+UserCRUD.count_new_in_period = staticmethod(_usercrud_count_by_date_range)
+UserCRUD.get_all_active = staticmethod(lambda session: _usercrud_get_all(session, is_active=True))
+UserCRUD.get_recent = staticmethod(_usercrud_get_recent)
+UserCRUD.get_new = staticmethod(_usercrud_get_new)
+UserCRUD.get_with_active_subscription = staticmethod(_usercrud_get_with_active_subscriptions)
+UserCRUD.get_with_active_subscriptions = staticmethod(_usercrud_get_with_active_subscriptions)
+UserCRUD.get_without_subscriptions = staticmethod(_usercrud_get_without_subscriptions)
+UserCRUD.get_with_subscriptions = staticmethod(lambda session: _usercrud_get_with_active_subscriptions(session))
+UserCRUD.get_with_expired_subscriptions = staticmethod(_usercrud_get_with_expired_subscriptions)
+UserCRUD.get_by_channel = staticmethod(_usercrud_get_by_channel)
+UserCRUD.get_total_spent = staticmethod(_usercrud_get_total_spent)
+UserCRUD.update = staticmethod(_usercrud_update)
+UserCRUD.search = staticmethod(_usercrud_search)
+UserCRUD.save_promo = staticmethod(_usercrud_save_promo)
+UserCRUD.mark_as_blocked = staticmethod(_usercrud_mark_as_blocked)
+
+ChannelCRUD.get_all = staticmethod(_channelcrud_get_all)
+ChannelCRUD.get_all_active = staticmethod(_channelcrud_get_all_active)
+ChannelCRUD.update = staticmethod(_channelcrud_update)
+ChannelCRUD.delete = staticmethod(_channelcrud_delete)
+ChannelCRUD.get_top_by_subscriptions = staticmethod(_channelcrud_get_top_by_subscriptions)
+ChannelCRUD.count_all = staticmethod(_channelcrud_count_all)
+ChannelCRUD.count_active = staticmethod(_channelcrud_count_active)
+
+PackageCRUD.get_all = staticmethod(_packagecrud_get_all)
+PackageCRUD.get_all_active = staticmethod(_packagecrud_get_all_active)
+PackageCRUD.get_channels = staticmethod(_packagecrud_get_channels)
+PackageCRUD.get_package_channels = staticmethod(_packagecrud_get_package_channels)
+PackageCRUD.get_channels_count = staticmethod(_packagecrud_get_channels_count)
+PackageCRUD.set_channels = staticmethod(_packagecrud_set_channels)
+PackageCRUD.update = staticmethod(_packagecrud_update)
+PackageCRUD.delete = staticmethod(_packagecrud_delete)
+PackageCRUD.get_all_with_details = staticmethod(_packagecrud_get_all)
+PackageCRUD.count_all = staticmethod(_packagecrud_count_all)
+PackageCRUD.count_active = staticmethod(_packagecrud_count_active)
+
+SubscriptionCRUD.get_user_active_subscriptions = staticmethod(_subscriptioncrud_get_user_active_subscriptions)
+SubscriptionCRUD.get_expiring_in = staticmethod(_subscriptioncrud_get_expiring_in)
+SubscriptionCRUD.set_expired = staticmethod(_subscriptioncrud_set_expired)
+SubscriptionCRUD.mark_notification_sent = staticmethod(_subscriptioncrud_mark_notification_sent)
+SubscriptionCRUD.create_or_extend = staticmethod(_subscriptioncrud_create_or_extend)
+SubscriptionCRUD.extend = staticmethod(_subscriptioncrud_extend)
+SubscriptionCRUD.add_bonus_days = staticmethod(_subscriptioncrud_add_bonus_days)
+SubscriptionCRUD.count_active = staticmethod(_subscriptioncrud_count_active)
+SubscriptionCRUD.count_by_channel = staticmethod(_subscriptioncrud_count_by_channel)
+SubscriptionCRUD.count_active_by_channel = staticmethod(_subscriptioncrud_count_active_by_channel)
+SubscriptionCRUD.count_by_package = staticmethod(_subscriptioncrud_count_by_package)
+SubscriptionCRUD.count_active_by_package = staticmethod(_subscriptioncrud_count_active_by_package)
+SubscriptionCRUD.count_all = staticmethod(_subscriptioncrud_count_all)
+SubscriptionCRUD.count_by_date_range = staticmethod(_subscriptioncrud_count_by_date_range)
+SubscriptionCRUD.count_expired_in_range = staticmethod(_subscriptioncrud_count_expired_in_range)
+SubscriptionCRUD.count_by_channel_and_period = staticmethod(_subscriptioncrud_count_by_channel_and_period)
+SubscriptionCRUD.count_by_package_and_period = staticmethod(_subscriptioncrud_count_by_package_and_period)
+SubscriptionCRUD.count_by_package_and_tier = staticmethod(_subscriptioncrud_count_by_package_and_tier)
+SubscriptionCRUD.count_renewals_by_channel = staticmethod(_subscriptioncrud_count_renewals_by_channel)
+SubscriptionCRUD.count_churned_by_channel_and_period = staticmethod(_subscriptioncrud_count_churned_by_channel_and_period)
+SubscriptionCRUD.get_avg_duration_by_channel = staticmethod(_subscriptioncrud_get_avg_duration_by_channel)
+SubscriptionCRUD.count_active_by_user = staticmethod(_subscriptioncrud_count_active_by_user)
+SubscriptionCRUD.get_all = staticmethod(_subscriptioncrud_get_all)
+SubscriptionCRUD.count_new_by_date = staticmethod(_subscriptioncrud_count_new_by_date)
+SubscriptionCRUD.count_expired_by_date = staticmethod(_subscriptioncrud_count_expired_by_date)
+SubscriptionCRUD.count_new_in_period = staticmethod(_subscriptioncrud_count_new_in_period)
+SubscriptionCRUD.get_active_by_user = staticmethod(_subscriptioncrud_get_active_by_user)
+SubscriptionCRUD.get_all_by_user = staticmethod(_subscriptioncrud_get_all_by_user)
+SubscriptionCRUD.has_active = staticmethod(_subscriptioncrud_has_active)
+SubscriptionCRUD.deactivate_all_by_user = staticmethod(_subscriptioncrud_deactivate_all_by_user)
+SubscriptionCRUD.update = staticmethod(_subscriptioncrud_update)
+SubscriptionCRUD.create = staticmethod(_subscriptioncrud_create)
+SubscriptionCRUD.delete_old_expired = staticmethod(_subscriptioncrud_delete_old_expired)
+
+PaymentCRUD.create = staticmethod(_paymentcrud_create)
+PaymentCRUD.update_status = staticmethod(_paymentcrud_update_status)
+PaymentCRUD.update_invoice = staticmethod(_paymentcrud_update_invoice)
+PaymentCRUD.apply_promo = staticmethod(_paymentcrud_apply_promo)
+PaymentCRUD.get_recent = staticmethod(_paymentcrud_get_recent)
+PaymentCRUD.get_total_by_user = staticmethod(_paymentcrud_get_total_by_user)
+PaymentCRUD.get_by_date_range = staticmethod(_paymentcrud_get_by_date_range)
+PaymentCRUD.count_pending = staticmethod(_paymentcrud_count_pending)
+PaymentCRUD.sum_by_date = staticmethod(_paymentcrud_sum_by_date)
+PaymentCRUD.count_by_date = staticmethod(_paymentcrud_count_by_date)
+PaymentCRUD.sum_in_period = staticmethod(_paymentcrud_sum_in_period)
+PaymentCRUD.count_in_period = staticmethod(_paymentcrud_count_in_period)
+PaymentCRUD.delete_unpaid_old = staticmethod(_paymentcrud_delete_unpaid_old)
+PaymentCRUD.get_pending = staticmethod(_paymentcrud_get_pending)
+PaymentCRUD.get_expired_pending = staticmethod(_paymentcrud_get_expired_pending)
+PaymentCRUD.get_revenue_by_period = staticmethod(_paymentcrud_get_revenue_by_period)
+PaymentCRUD.count_completed = staticmethod(_paymentcrud_count_completed)
+PaymentCRUD.get_total_revenue = staticmethod(_paymentcrud_get_total_revenue)
+PaymentCRUD.get_payment_methods_stats = staticmethod(_paymentcrud_get_payment_methods_stats)
+PaymentCRUD.count_unique_payers = staticmethod(_paymentcrud_count_unique_payers)
+PaymentCRUD.count_by_user = staticmethod(_paymentcrud_count_by_user)
+PaymentCRUD.get_user_total_spent = staticmethod(_paymentcrud_get_user_total_spent)
+PaymentCRUD.get_all_completed = staticmethod(_paymentcrud_get_all_completed)
+PaymentCRUD.get_channel_revenue_by_period = staticmethod(_paymentcrud_get_channel_revenue_by_period)
+PaymentCRUD.get_channel_total_revenue = staticmethod(_paymentcrud_get_channel_total_revenue)
+PaymentCRUD.get_package_revenue_by_period = staticmethod(_paymentcrud_get_package_revenue_by_period)
+PaymentCRUD.get_package_total_revenue = staticmethod(_paymentcrud_get_package_total_revenue)
+
+PromoCodeCRUD.get_valid_promo = staticmethod(_promocodecrud_get_valid_promo)
+PromoCodeCRUD.is_used_by_user = staticmethod(_promocodecrud_is_used_by_user)
+PromoCodeCRUD.mark_used = staticmethod(_promocodecrud_mark_used)
+PromoCodeCRUD.get_all = staticmethod(lambda session: _promocru_get_all(session))
+
+PromoCRUD.get_all = staticmethod(_promocru_get_all)
+PromoCRUD.get_active = staticmethod(_promocru_get_active)
+PromoCRUD.get_expired = staticmethod(_promocru_get_expired)
+PromoCRUD.get_fully_used = staticmethod(_promocru_get_fully_used)
+PromoCRUD.count_all = staticmethod(_promocru_count_all)
+PromoCRUD.count_active = staticmethod(_promocru_count_active)
+PromoCRUD.count_expired = staticmethod(_promocru_count_expired)
+PromoCRUD.count_fully_used = staticmethod(_promocru_count_fully_used)
+PromoCRUD.get_most_used = staticmethod(_promocru_get_most_used)
+PromoCRUD.create = staticmethod(_promocru_create)
+PromoCRUD.update = staticmethod(_promocru_update)
+PromoCRUD.delete = staticmethod(_promocru_delete)
+PromoCRUD.get_total_discount_by_period = staticmethod(_promocru_get_total_discount_by_period)
+PromoCRUD.count_usages_by_period = staticmethod(_promousage_count_by_period)
+PromoCRUD.get_total_discount = staticmethod(_promocru_get_total_discount)
+PromoCRUD.count_total_usages = staticmethod(_promocru_count_total_usages)
+
+PromoUsageCRUD.count_all = staticmethod(_promousage_count_all)
+PromoUsageCRUD.count_today = staticmethod(_promousage_count_today)
+PromoUsageCRUD.count_this_week = staticmethod(_promousage_count_this_week)
+PromoUsageCRUD.count_this_month = staticmethod(_promousage_count_this_month)
+PromoUsageCRUD.get_by_promo = staticmethod(_promousage_get_by_promo)
+
+PricingCRUD.get_by_target = staticmethod(_pricingcrud_get_by_target)
+PricingCRUD.get_by_target_and_duration = staticmethod(_pricingcrud_get_by_target_and_duration)
+PricingCRUD.get_by_id = staticmethod(_pricingcrud_get_by_id)
+PricingCRUD.create = staticmethod(_pricingcrud_create)
+PricingCRUD.update = staticmethod(_pricingcrud_update)
+PricingCRUD.delete = staticmethod(_pricingcrud_delete)
+
+SettingsCRUD.get = staticmethod(_settingscrud_get)
+SettingsCRUD.set = staticmethod(_settingscrud_set)
+SettingsCRUD.get_all = staticmethod(_settingscrud_get_all)
+
+AdminCRUD.get_all = staticmethod(_admincrud_get_all)
+AdminCRUD.get_by_telegram_id = staticmethod(_admincrud_get_by_telegram_id)
+AdminCRUD.create = staticmethod(_admincrud_create)
+AdminCRUD.delete = staticmethod(_admincrud_delete)
+
+StatisticsCRUD.get_dashboard_stats = staticmethod(_statisticscrud_get_dashboard_stats)
+StatisticsCRUD.get_quick_stats = staticmethod(_statisticscrud_get_quick_stats)
+
+StatsCRUD.save_daily = staticmethod(_statscrud_save_daily)
+
+BroadcastCRUD.get_pending_scheduled = staticmethod(_broadcastcrud_get_pending_scheduled)
+BroadcastCRUD.update_status = staticmethod(_broadcastcrud_update_status)
+BroadcastCRUD.delete_old = staticmethod(_broadcastcrud_delete_old)
+BroadcastCRUD.create = staticmethod(_broadcastcrud_create)
+BroadcastCRUD.create_scheduled = staticmethod(_broadcastcrud_create_scheduled)
+BroadcastCRUD.get_scheduled = staticmethod(_broadcastcrud_get_scheduled)
+BroadcastCRUD.get_recent = staticmethod(_broadcastcrud_get_recent)
+BroadcastCRUD.get_last = staticmethod(_broadcastcrud_get_last)
+BroadcastCRUD.count_all = staticmethod(_broadcastcrud_count_all)
+BroadcastCRUD.mark_completed = staticmethod(_broadcastcrud_mark_completed)
+
+
+def _wrap_async_methods() -> None:
+    for name, cls in list(globals().items()):
+        if not inspect.isclass(cls) or not name.endswith("CRUD"):
+            continue
+        for attr_name, attr_value in list(cls.__dict__.items()):
+            if attr_name.startswith("_"):
+                continue
+            is_static = isinstance(attr_value, staticmethod)
+            func = attr_value.__func__ if is_static else attr_value
+            if not inspect.isfunction(func) or inspect.iscoroutinefunction(func):
+                continue
+            params = list(inspect.signature(func).parameters.values())
+            if not params or params[0].name != "session":
+                continue
+
+            async def wrapper(session=None, *args, __func=func, **kwargs):
+                if isinstance(session, AsyncSession):
+                    return await session.run_sync(lambda sync_session: __func(sync_session, *args, **kwargs))
+                if session is None:
+                    from database.database import async_session
+
+                    if async_session is None:
+                        raise RuntimeError("Database session factory is not initialized.")
+                    async with async_session() as managed_session:
+                        try:
+                            result = await managed_session.run_sync(
+                                lambda sync_session: __func(sync_session, *args, **kwargs)
+                            )
+                            await managed_session.commit()
+                            return result
+                        except Exception:
+                            await managed_session.rollback()
+                            raise
+                return __func(session, *args, **kwargs)
+
+            wrapped = staticmethod(wrapper) if is_static else wrapper
+            setattr(cls, attr_name, wrapped)
+
+        if "__init__" not in cls.__dict__:
+            def __init__(self, session):
+                self._session = session
+
+            cls.__init__ = __init__
+        if "__getattr__" not in cls.__dict__:
+            def __getattr__(self, attr):
+                attr_value = getattr(self.__class__, attr)
+                if inspect.iscoroutinefunction(attr_value):
+                    return functools.partial(attr_value, self._session)
+                return attr_value
+
+            cls.__getattr__ = __getattr__
+
+
+_wrap_async_methods()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
