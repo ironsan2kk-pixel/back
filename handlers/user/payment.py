@@ -438,6 +438,13 @@ async def _process_successful_payment(
                     "link": invite_link,
                 })
     
+    # Обновляем общую сумму трат пользователя
+    final_amount = payment.final_amount or payment.amount
+    await UserCRUD.add_spent(session, user.id, final_amount)
+
+    # Начисляем бонус рефереру (10% от первой покупки)
+    await _process_referral_bonus(session, user, final_amount, message.bot)
+
     # Логируем
     await ActivityLogCRUD.log(
         session,
@@ -445,7 +452,7 @@ async def _process_successful_payment(
         action="payment_success",
         details={
             "payment_id": payment.id,
-            "amount": payment.final_amount or payment.amount,
+            "amount": final_amount,
             "type": payment.payment_type,
         }
     )
@@ -486,6 +493,77 @@ async def _process_successful_payment(
         ),
         parse_mode="HTML"
     )
+
+
+async def _process_referral_bonus(session: AsyncSession, user, amount: float, bot):
+    """
+    Начисление бонуса рефереру за первую покупку приглашённого.
+
+    - Проверяет, есть ли у пользователя реферер
+    - Проверяет, является ли это первой покупкой
+    - Начисляет 10% от суммы покупки рефереру
+    """
+    # Проверяем, есть ли реферер
+    if not user.referred_by:
+        return
+
+    # Проверяем, является ли это первой покупкой (до этого total_spent был 0)
+    # amount уже добавлен к total_spent, поэтому проверяем равенство
+    if user.total_spent != amount:
+        # Это не первая покупка
+        return
+
+    try:
+        # Получаем реферера
+        referrer = await UserCRUD.get_by_id(session, user.referred_by)
+        if not referrer:
+            return
+
+        # Рассчитываем бонус (10%)
+        bonus = amount * 0.10
+
+        # Начисляем бонус на баланс реферера
+        await UserCRUD.add_balance(session, referrer.id, bonus)
+
+        # Логируем
+        await ActivityLogCRUD.log(
+            session,
+            user_id=referrer.id,
+            action="referral_bonus",
+            details={
+                "from_user_id": user.id,
+                "purchase_amount": amount,
+                "bonus": bonus,
+            }
+        )
+
+        logger.info(f"Referral bonus ${bonus:.2f} credited to user {referrer.id}")
+
+        # Уведомляем реферера о бонусе
+        lang = referrer.language or "ru"
+        referral_name = user.first_name or user.username or "Пользователь"
+
+        if lang == "ru":
+            text = (
+                f"🎁 <b>Реферальный бонус!</b>\n\n"
+                f"Ваш реферал <b>{referral_name}</b> совершил первую покупку "
+                f"на сумму <b>${amount:.2f}</b>.\n\n"
+                f"Вам начислено: <b>${bonus:.2f}</b> на баланс!\n\n"
+                f"💰 Ваш текущий баланс: <b>${referrer.balance + bonus:.2f}</b>"
+            )
+        else:
+            text = (
+                f"🎁 <b>Referral Bonus!</b>\n\n"
+                f"Your referral <b>{referral_name}</b> made their first purchase "
+                f"for <b>${amount:.2f}</b>.\n\n"
+                f"You received: <b>${bonus:.2f}</b> to your balance!\n\n"
+                f"💰 Your current balance: <b>${referrer.balance + bonus:.2f}</b>"
+            )
+
+        await bot.send_message(referrer.telegram_id, text, parse_mode="HTML")
+
+    except Exception as e:
+        logger.warning(f"Failed to process referral bonus for user {user.id}: {e}")
 
 
 async def _generate_invite_link(channel) -> str:

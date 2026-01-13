@@ -131,7 +131,14 @@ class UserCRUD:
         session.query(User).filter(User.id == user_id).update(
             {"total_spent": User.total_spent + amount}
         )
-    
+
+    @staticmethod
+    def add_balance(session: Session, user_id: int, amount: float) -> None:
+        """Добавить сумму к балансу пользователя (реферальные бонусы)."""
+        session.query(User).filter(User.id == user_id).update(
+            {"balance": User.balance + amount}
+        )
+
     @staticmethod
     def get_all(
         session: Session,
@@ -162,7 +169,52 @@ class UserCRUD:
     def get_by_referral_code(session: Session, code: str) -> Optional[User]:
         """Получить пользователя по реферальному коду."""
         return session.query(User).filter(User.referral_code == code).first()
-    
+
+    @staticmethod
+    def get_referrals(session: Session, user_id: int, skip: int = 0, limit: int = 50) -> List[User]:
+        """Получить список приглашённых пользователей."""
+        return session.query(User).filter(
+            User.referred_by == user_id
+        ).order_by(desc(User.created_at)).offset(skip).limit(limit).all()
+
+    @staticmethod
+    def count_referrals(session: Session, user_id: int) -> int:
+        """Подсчитать количество приглашённых пользователей."""
+        return session.query(func.count(User.id)).filter(
+            User.referred_by == user_id
+        ).scalar() or 0
+
+    @staticmethod
+    def get_referral_stats(session: Session, user_id: int) -> dict:
+        """Получить статистику рефералов пользователя."""
+        # Общее количество рефералов
+        total_referrals = UserCRUD.count_referrals(session, user_id)
+
+        # Рефералы с покупками (по total_spent > 0)
+        referrals_with_purchases = session.query(func.count(User.id)).filter(
+            User.referred_by == user_id,
+            User.total_spent > 0
+        ).scalar() or 0
+
+        # Общая сумма покупок рефералов
+        total_referral_spending = session.query(func.sum(User.total_spent)).filter(
+            User.referred_by == user_id
+        ).scalar() or 0.0
+
+        return {
+            "total_referrals": total_referrals,
+            "referrals_with_purchases": referrals_with_purchases,
+            "total_referral_spending": total_referral_spending,
+        }
+
+    @staticmethod
+    def get_referrer(session: Session, user_id: int) -> Optional[User]:
+        """Получить пригласившего пользователя."""
+        user = session.query(User).filter(User.id == user_id).first()
+        if user and user.referred_by:
+            return session.query(User).filter(User.id == user.referred_by).first()
+        return None
+
     @staticmethod
     def _generate_referral_code(length: int = 8) -> str:
         """Генерация уникального реферального кода."""
