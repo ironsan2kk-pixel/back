@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Настройки - Admin Panel{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-gear"></i> Настройки</h2>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">Бот</div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted">BOT_TOKEN</td>
+                        <td><code>{{ settings.BOT_TOKEN[:20] if settings.BOT_TOKEN else '-' }}...</code></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Crypto Bot Token</td>
+                        <td>
+                            {% if settings.CRYPTO_BOT_TOKEN %}
+                                <span class="badge bg-success">Настроен</span>
+                            {% else %}
+                                <span class="badge bg-danger">Не настроен</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">База данных</div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted">Тип</td>
+                        <td><code>{{ settings.DATABASE_URL.split(':')[0] if settings.DATABASE_URL else 'sqlite' }}</code></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">Админы</div>
+            <div class="card-body">
+                <p class="text-muted small">ID администраторов:</p>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for admin_id in settings.ADMIN_IDS %}
+                        <span class="badge bg-primary">{{ admin_id }}</span>
+                    {% else %}
+                        <span class="text-muted">Не настроены</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">Система</div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted">Debug</td>
+                        <td>
+                            {% if settings.DEBUG %}
+                                <span class="badge bg-warning">Включён</span>
+                            {% else %}
+                                <span class="badge bg-success">Выключен</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> Для изменения настроек отредактируйте файл <code>.env</code> и перезапустите бота.
+</div>
+{% endblock %}

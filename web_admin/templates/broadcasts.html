@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Рассылки - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-megaphone"></i> Рассылки</h2>
+    <a href="/broadcasts/new" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Создать рассылку</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr><th>ID</th><th>Текст</th><th>Статус</th><th>Отправлено</th><th>Дата</th></tr>
+                </thead>
+                <tbody>
+                    {% for broadcast in broadcasts %}
+                    <tr>
+                        <td>#{{ broadcast.id }}</td>
+                        <td>{{ broadcast.text | truncate(50) if broadcast.text else '-' }}</td>
+                        <td>
+                            {% if broadcast.status == 'completed' %}<span class="badge bg-success">Завершена</span>
+                            {% elif broadcast.status == 'in_progress' %}<span class="badge bg-warning">В процессе</span>
+                            {% elif broadcast.status == 'pending' %}<span class="badge bg-info">Ожидает</span>
+                            {% else %}<span class="badge bg-secondary">{{ broadcast.status }}</span>{% endif %}
+                        </td>
+                        <td>{{ broadcast.sent_count or 0 }} / {{ broadcast.total_count or 0 }}</td>
+                        <td><small>{{ broadcast.created_at.strftime('%d.%m.%Y %H:%M') }}</small></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="text-center text-muted py-4">Рассылки не созданы</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

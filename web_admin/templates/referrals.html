@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Рефералы - Admin Panel{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-share"></i> Реферальная программа</h2>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h3>{{ total_referrals }}</h3>
+                <p class="mb-0">Всего рефералов</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h3>{{ users_with_referrals }}</h3>
+                <p class="mb-0">Пользователей с рефералами</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-trophy"></i> Топ рефереров</div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr><th>#</th><th>Пользователь</th><th>Рефералов</th><th>Баланс</th></tr>
+                </thead>
+                <tbody>
+                    {% for user, count in top_referrers %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><a href="/users/{{ user.id }}">{{ user.first_name or user.username or user.id }}</a></td>
+                        <td><span class="badge bg-primary">{{ count }}</span></td>
+                        <td class="text-success">${{ "%.2f"|format(user.balance or 0) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-center text-muted py-4">Нет данных</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

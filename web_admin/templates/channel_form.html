@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Редактировать' if channel else 'Добавить' }} канал - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <i class="bi bi-{{ 'pencil' if channel else 'plus-lg' }}"></i>
+        {{ 'Редактировать канал' if channel else 'Добавить канал' }}
+    </h2>
+    <a href="/channels" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Назад
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" action="{{ '/channels/' ~ channel.id ~ '/edit' if channel else '/channels/add' }}">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Название (RU) *</label>
+                    <input type="text" name="name_ru" class="form-control" required
+                           value="{{ channel.name_ru if channel else '' }}">
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Название (EN)</label>
+                    <input type="text" name="name_en" class="form-control"
+                           value="{{ channel.name_en if channel else '' }}">
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Telegram ID *</label>
+                    <input type="number" name="telegram_id" class="form-control" required
+                           value="{{ channel.telegram_id if channel else '' }}"
+                           placeholder="-1001234567890">
+                    <small class="text-muted">ID канала в Telegram (отрицательное число)</small>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Username</label>
+                    <div class="input-group">
+                        <span class="input-group-text">@</span>
+                        <input type="text" name="username" class="form-control"
+                               value="{{ channel.username if channel else '' }}"
+                               placeholder="channel_username">
+                    </div>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Описание (RU)</label>
+                    <textarea name="description_ru" class="form-control" rows="3">{{ channel.description_ru if channel else '' }}</textarea>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Описание (EN)</label>
+                    <textarea name="description_en" class="form-control" rows="3">{{ channel.description_en if channel else '' }}</textarea>
+                </div>
+
+                {% if channel %}
+                <div class="col-12 mb-3">
+                    <div class="form-check">
+                        <input type="checkbox" name="is_active" class="form-check-input" id="is_active"
+                               {% if channel.is_active %}checked{% endif %} value="true">
+                        <label class="form-check-label" for="is_active">Активен</label>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg"></i> {{ 'Сохранить' if channel else 'Добавить' }}
+                    </button>
+
+                    {% if channel %}
+                    <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                        <i class="bi bi-trash"></i> Удалить
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if channel %}
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Удалить канал?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Вы уверены, что хотите удалить канал <strong>{{ channel.name_ru }}</strong>?</p>
+                <p class="text-danger">Это действие нельзя отменить!</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <form method="post" action="/channels/{{ channel.id }}/delete" class="d-inline">
+                    <button type="submit" class="btn btn-danger">Удалить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

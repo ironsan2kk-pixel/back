@@ -1,0 +1,237 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🎨 ADMIN PANEL STYLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+    --sidebar-width: 250px;
+    --sidebar-bg: #212529;
+    --sidebar-color: #adb5bd;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #f8f9fa;
+    min-height: 100vh;
+}
+
+/* Wrapper */
+.wrapper {
+    display: flex;
+    width: 100%;
+    min-height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   📌 SIDEBAR
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.sidebar {
+    min-width: var(--sidebar-width);
+    max-width: var(--sidebar-width);
+    background: var(--sidebar-bg);
+    color: var(--sidebar-color);
+    transition: all 0.3s;
+    min-height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 999;
+}
+
+.sidebar.active {
+    margin-left: calc(var(--sidebar-width) * -1);
+}
+
+.sidebar-header {
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-header h3 {
+    color: #fff;
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.sidebar .nav-link {
+    padding: 12px 20px;
+    color: var(--sidebar-color);
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+}
+
+.sidebar .nav-link:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+    border-left-color: rgba(255, 255, 255, 0.3);
+}
+
+.sidebar .nav-link.active {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+    border-left-color: #0d6efd;
+}
+
+.sidebar .nav-link i {
+    margin-right: 10px;
+    width: 20px;
+    text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   📄 CONTENT
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+#content {
+    width: 100%;
+    margin-left: var(--sidebar-width);
+    transition: all 0.3s;
+}
+
+.sidebar.active + #content {
+    margin-left: 0;
+}
+
+.main-content {
+    min-height: calc(100vh - 56px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   📊 STAT CARDS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.stat-card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.stat-card .stat-icon {
+    font-size: 2.5rem;
+    opacity: 0.5;
+}
+
+.stat-card h2 {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   📦 CARDS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.08);
+}
+
+.card-header {
+    background: #fff;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+    padding: 15px 20px;
+}
+
+.card-body {
+    padding: 20px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   📋 TABLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table {
+    margin-bottom: 0;
+}
+
+.table th {
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #6c757d;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🔘 BUTTONS & BADGES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.btn {
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+.badge {
+    font-weight: 500;
+    padding: 5px 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   📱 RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+    .sidebar {
+        margin-left: calc(var(--sidebar-width) * -1);
+    }
+
+    .sidebar.active {
+        margin-left: 0;
+    }
+
+    #content {
+        margin-left: 0;
+    }
+
+    .sidebar.active + #content {
+        margin-left: var(--sidebar-width);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🎯 UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+code {
+    background: #f1f3f5;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #e83e8c;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}

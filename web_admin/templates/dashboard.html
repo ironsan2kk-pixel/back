@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Admin Panel{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Пользователей</h6>
+                        <h2 class="mb-0">{{ stats.total_users }}</h2>
+                    </div>
+                    <div class="stat-icon">
+                        <i class="bi bi-people"></i>
+                    </div>
+                </div>
+                <small>Активных за 24ч: {{ stats.active_users_24h }}</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Подписок</h6>
+                        <h2 class="mb-0">{{ stats.active_subscriptions }}</h2>
+                    </div>
+                    <div class="stat-icon">
+                        <i class="bi bi-patch-check"></i>
+                    </div>
+                </div>
+                <small>Активных подписок</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Платежей</h6>
+                        <h2 class="mb-0">{{ stats.total_payments }}</h2>
+                    </div>
+                    <div class="stat-icon">
+                        <i class="bi bi-credit-card"></i>
+                    </div>
+                </div>
+                <small>Сегодня: {{ stats.payments_today }}</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Каналов</h6>
+                        <h2 class="mb-0">{{ stats.total_channels }}</h2>
+                    </div>
+                    <div class="stat-icon">
+                        <i class="bi bi-broadcast"></i>
+                    </div>
+                </div>
+                <small>Активных каналов</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Today Stats -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-calendar-day"></i> Сегодня
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h3 class="text-primary">{{ stats.new_users_today }}</h3>
+                        <small class="text-muted">Новых пользователей</small>
+                    </div>
+                    <div class="col-6">
+                        <h3 class="text-success">{{ stats.payments_today }}</h3>
+                        <small class="text-muted">Платежей</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-exclamation-triangle"></i> Внимание
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h3 class="text-danger">{{ stats.blocked_users }}</h3>
+                        <small class="text-muted">Заблокировано</small>
+                    </div>
+                    <div class="col-6">
+                        <h3 class="text-info">{{ stats.active_users_24h }}</h3>
+                        <small class="text-muted">Онлайн 24ч</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-graph-up"></i> Регистрации за неделю
+            </div>
+            <div class="card-body">
+                <canvas id="registrationsChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-currency-dollar"></i> Платежи за неделю
+            </div>
+            <div class="card-body">
+                <canvas id="paymentsChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-activity"></i> Последние действия
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>Время</th>
+                        <th>User ID</th>
+                        <th>Действие</th>
+                        <th>Детали</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_logs %}
+                    <tr>
+                        <td><small>{{ log.created_at.strftime('%d.%m %H:%M') }}</small></td>
+                        <td>
+                            <a href="/users/{{ log.user_id }}">{{ log.user_id }}</a>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ log.action }}</span>
+                        </td>
+                        <td><small class="text-muted">{{ log.details | truncate(50) if log.details else '-' }}</small></td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">Нет данных</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Загружаем данные для графиков
+    fetch('/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            // График регистраций
+            const regCtx = document.getElementById('registrationsChart').getContext('2d');
+            new Chart(regCtx, {
+                type: 'line',
+                data: {
+                    labels: data.registrations.map(r => r.date),
+                    datasets: [{
+                        label: 'Регистрации',
+                        data: data.registrations.map(r => r.count),
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            // График платежей
+            const payCtx = document.getElementById('paymentsChart').getContext('2d');
+            new Chart(payCtx, {
+                type: 'bar',
+                data: {
+                    labels: data.payments.map(p => p.date),
+                    datasets: [{
+                        label: 'Платежей',
+                        data: data.payments.map(p => p.count),
+                        backgroundColor: '#198754'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        });
+</script>
+{% endblock %}

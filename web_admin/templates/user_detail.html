@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Пользователь #{{ user.id }} - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-person"></i> Пользователь #{{ user.id }}</h2>
+    <a href="/users" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Назад
+    </a>
+</div>
+
+<div class="row">
+    <!-- User Info -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-person-badge"></i> Информация
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted">Telegram ID</td>
+                        <td><code>{{ user.telegram_id }}</code></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Имя</td>
+                        <td>{{ user.first_name or '-' }} {{ user.last_name or '' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Username</td>
+                        <td>
+                            {% if user.username %}
+                                <a href="https://t.me/{{ user.username }}" target="_blank">@{{ user.username }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Язык</td>
+                        <td>{{ user.language.value if user.language else 'ru' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Баланс</td>
+                        <td class="text-success fw-bold">${{ "%.2f"|format(user.balance or 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Потрачено</td>
+                        <td>${{ "%.2f"|format(user.total_spent) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Реф. код</td>
+                        <td><code>{{ user.referral_code or '-' }}</code></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Приглашён</td>
+                        <td>
+                            {% if user.referred_by %}
+                                <a href="/users/{{ user.referred_by }}">User #{{ user.referred_by }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Регистрация</td>
+                        <td>{{ user.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Активность</td>
+                        <td>{{ user.last_activity.strftime('%d.%m.%Y %H:%M') }}</td>
+                    </tr>
+                </table>
+
+                <hr>
+
+                <!-- Status badges -->
+                <div class="mb-3">
+                    {% if user.is_blocked %}
+                        <span class="badge bg-danger">Заблокирован</span>
+                    {% endif %}
+                    {% if user.is_admin %}
+                        <span class="badge bg-warning">Админ</span>
+                    {% endif %}
+                    {% if not user.is_blocked and not user.is_admin %}
+                        <span class="badge bg-success">Активен</span>
+                    {% endif %}
+                </div>
+
+                <!-- Actions -->
+                <div class="d-grid gap-2">
+                    <form method="post" action="/users/{{ user.id }}/toggle-block" class="d-inline">
+                        <button type="submit" class="btn btn-{{ 'success' if user.is_blocked else 'danger' }} w-100">
+                            <i class="bi bi-{{ 'unlock' if user.is_blocked else 'lock' }}"></i>
+                            {{ 'Разблокировать' if user.is_blocked else 'Заблокировать' }}
+                        </button>
+                    </form>
+
+                    <form method="post" action="/users/{{ user.id }}/toggle-admin" class="d-inline">
+                        <button type="submit" class="btn btn-{{ 'secondary' if user.is_admin else 'warning' }} w-100">
+                            <i class="bi bi-{{ 'person' if user.is_admin else 'shield' }}"></i>
+                            {{ 'Снять админа' if user.is_admin else 'Назначить админом' }}
+                        </button>
+                    </form>
+                </div>
+
+                <hr>
+
+                <!-- Add balance -->
+                <form method="post" action="/users/{{ user.id }}/add-balance">
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="amount" step="0.01" class="form-control" placeholder="Сумма">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscriptions & Payments -->
+    <div class="col-md-8">
+        <!-- Subscriptions -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-patch-check"></i> Подписки ({{ subscriptions|length }})
+            </div>
+            <div class="card-body">
+                {% if subscriptions %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Канал</th>
+                                <th>Статус</th>
+                                <th>Истекает</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sub in subscriptions %}
+                            <tr>
+                                <td>{{ sub.channel_id }}</td>
+                                <td>
+                                    {% if sub.is_active %}
+                                        <span class="badge bg-success">Активна</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Истекла</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ sub.expires_at.strftime('%d.%m.%Y') if sub.expires_at else 'Навсегда' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Нет подписок</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Referrals -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-share"></i> Рефералы ({{ referrals|length }})
+            </div>
+            <div class="card-body">
+                {% if referrals %}
+                <div class="d-flex flex-wrap gap-2">
+                    {% for ref in referrals %}
+                    <a href="/users/{{ ref.id }}" class="btn btn-sm btn-outline-primary">
+                        {{ ref.first_name or ref.username or ref.id }}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Нет рефералов</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Payments -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-credit-card"></i> Последние платежи
+            </div>
+            <div class="card-body">
+                {% if payments %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Сумма</th>
+                                <th>Статус</th>
+                                <th>Дата</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in payments %}
+                            <tr>
+                                <td>#{{ payment.id }}</td>
+                                <td>${{ "%.2f"|format(payment.amount) }}</td>
+                                <td>
+                                    {% if payment.status == 'paid' %}
+                                        <span class="badge bg-success">Оплачен</span>
+                                    {% elif payment.status == 'pending' %}
+                                        <span class="badge bg-warning">Ожидает</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ payment.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ payment.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Нет платежей</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-journal-text"></i> Активность
+            </div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                {% if logs %}
+                <div class="list-group list-group-flush">
+                    {% for log in logs %}
+                    <div class="list-group-item px-0">
+                        <div class="d-flex justify-content-between">
+                            <span class="badge bg-secondary">{{ log.action }}</span>
+                            <small class="text-muted">{{ log.created_at.strftime('%d.%m %H:%M') }}</small>
+                        </div>
+                        {% if log.details %}
+                        <small class="text-muted">{{ log.details }}</small>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Нет активности</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
