@@ -133,6 +133,27 @@ class User(Base):
             return f"{self.full_name} (@{self.username})"
         return self.full_name
 
+    @property
+    def language_code(self) -> str:
+        """Язык пользователя в виде кода."""
+        return self.language.value if isinstance(self.language, Language) else str(self.language or "ru")
+
+    @property
+    def is_banned(self) -> bool:
+        """Совместимость с legacy: заблокирован ли пользователь."""
+        return self.is_blocked
+
+    @is_banned.setter
+    def is_banned(self, value: bool) -> None:
+        self.is_blocked = bool(value)
+
+    @property
+    def is_superadmin(self) -> bool:
+        """Проверка суперадмина по списку в настройках."""
+        from config import settings
+
+        return self.telegram_id in settings.ADMIN_IDS
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 📢 КАНАЛЫ
@@ -187,6 +208,16 @@ class Channel(Base):
             return self.description_en
         return self.description_ru or ""
 
+    @property
+    def name(self) -> str:
+        """Legacy-алиас названия."""
+        return self.name_ru
+
+    @property
+    def description(self) -> str:
+        """Legacy-алиас описания."""
+        return self.description_ru or ""
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 💰 ТАРИФНЫЕ ПЛАНЫ
@@ -235,6 +266,34 @@ class SubscriptionPlan(Base):
         """Проверка на пожизненную подписку."""
         return self.duration_days == 0
 
+    @property
+    def price_usdt(self) -> float:
+        """Legacy-алиас цены."""
+        return self.price
+
+    @price_usdt.setter
+    def price_usdt(self, value: float) -> None:
+        self.price = value
+
+    @property
+    def label_ru(self) -> Optional[str]:
+        """Legacy-алиас названия."""
+        return self.name_ru
+
+    @label_ru.setter
+    def label_ru(self, value: Optional[str]) -> None:
+        if value is not None:
+            self.name_ru = value
+
+    @property
+    def label_en(self) -> Optional[str]:
+        """Legacy-алиас названия."""
+        return self.name_en
+
+    @label_en.setter
+    def label_en(self, value: Optional[str]) -> None:
+        self.name_en = value
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 📦 ПАКЕТЫ ПОДПИСОК
@@ -282,6 +341,16 @@ class SubscriptionPackage(Base):
     def get_description(self, lang: str = "ru") -> str:
         if lang == "en" and self.description_en:
             return self.description_en
+        return self.description_ru or ""
+
+    @property
+    def name(self) -> str:
+        """Legacy-алиас названия."""
+        return self.name_ru
+
+    @property
+    def description(self) -> str:
+        """Legacy-алиас описания."""
         return self.description_ru or ""
 
 
@@ -339,6 +408,34 @@ class PackagePlan(Base):
     @property
     def is_lifetime(self) -> bool:
         return self.duration_days == 0
+
+    @property
+    def price_usdt(self) -> float:
+        """Legacy-алиас цены."""
+        return self.price
+
+    @price_usdt.setter
+    def price_usdt(self, value: float) -> None:
+        self.price = value
+
+    @property
+    def label_ru(self) -> Optional[str]:
+        """Legacy-алиас названия."""
+        return self.name_ru
+
+    @label_ru.setter
+    def label_ru(self, value: Optional[str]) -> None:
+        if value is not None:
+            self.name_ru = value
+
+    @property
+    def label_en(self) -> Optional[str]:
+        """Legacy-алиас названия."""
+        return self.name_en
+
+    @label_en.setter
+    def label_en(self, value: Optional[str]) -> None:
+        self.name_en = value
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -415,6 +512,15 @@ class UserSubscription(Base):
         delta = self.expires_at - datetime.utcnow()
         return max(0, delta.days)
 
+    @property
+    def end_date(self) -> Optional[datetime]:
+        """Legacy-алиас даты окончания."""
+        return self.expires_at
+
+    @end_date.setter
+    def end_date(self, value: Optional[datetime]) -> None:
+        self.expires_at = value
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 💳 ПЛАТЕЖИ
@@ -428,7 +534,7 @@ class Payment(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Crypto Bot данные
-    invoice_id = Column(BigInteger, unique=True, nullable=False)  # ID инвойса в Crypto Bot
+    invoice_id = Column(BigInteger, unique=True, nullable=True)  # ID инвойса в Crypto Bot
     invoice_hash = Column(String(255), nullable=True)  # Hash для проверки
     
     # Сумма
@@ -554,6 +660,80 @@ class Promocode(Base):
         elif self.type == PromocodeType.FREE_ACCESS:
             return original_price
         return 0.0
+
+    @property
+    def discount_percent(self) -> Optional[float]:
+        """Legacy-алиас процента скидки."""
+        if self.type == PromocodeType.PERCENT:
+            return self.value
+        return None
+
+    @property
+    def discount_amount(self) -> Optional[float]:
+        """Legacy-алиас фиксированной скидки."""
+        if self.type == PromocodeType.FIXED:
+            return self.value
+        return None
+
+    @property
+    def bonus_days(self) -> Optional[int]:
+        """Legacy-алиас бонусных дней."""
+        if self.type == PromocodeType.FREE_DAYS:
+            return int(self.value)
+        return None
+
+    @property
+    def free_days(self) -> Optional[int]:
+        """Legacy-алиас бесплатных дней."""
+        return self.bonus_days
+
+    @property
+    def promo_type(self) -> str:
+        """Legacy-алиас типа промокода."""
+        if self.type == PromocodeType.FREE_ACCESS:
+            return "free_access"
+        if self.type == PromocodeType.FREE_DAYS:
+            return "bonus_time"
+        return "discount"
+
+    @property
+    def uses_count(self) -> int:
+        """Legacy-алиас счетчика использований."""
+        return self.current_uses
+
+    @property
+    def used_count(self) -> int:
+        """Дополнительный алиас для админки."""
+        return self.current_uses
+
+    @property
+    def expires_at(self) -> Optional[datetime]:
+        """Legacy-алиас срока действия."""
+        return self.valid_until
+
+    @expires_at.setter
+    def expires_at(self, value: Optional[datetime]) -> None:
+        self.valid_until = value
+
+    @property
+    def discount_type(self) -> str:
+        """Тип скидки для экспортов."""
+        return self.type.value
+
+    @property
+    def discount_value(self) -> float:
+        """Значение скидки для экспортов."""
+        return float(self.value)
+
+    @property
+    def usage_limit(self) -> Optional[int]:
+        """Лимит использований (алиас)."""
+        return self.max_uses
+
+    @property
+    def times_used(self) -> int:
+        """Кол-во использований (алиас)."""
+        return self.current_uses
 
 
 class PromocodeUsage(Base):
@@ -749,6 +929,9 @@ class Broadcast(Base):
     # Текст рассылки
     text_ru = Column(Text, nullable=False)
     text_en = Column(Text, nullable=True)
+
+    # Legacy/compat текст
+    text = Column(Text, nullable=True)
     
     # Медиа
     image_url = Column(String(500), nullable=True)
@@ -761,6 +944,19 @@ class Broadcast(Base):
     target_lang = Column(String(2), nullable=True)  # ru/en или NULL для всех
     target_has_subscription = Column(Boolean, nullable=True)  # NULL = все
     target_channel_id = Column(Integer, ForeignKey("channels.id", ondelete="SET NULL"), nullable=True)
+
+    # Совместимость с таргетингом
+    target_type = Column(String(50), nullable=True)
+    target_id = Column(Integer, nullable=True)
+    target_filter = Column(JSON, nullable=True)
+
+    # Медиа
+    media_type = Column(String(20), nullable=True)
+    media_file_id = Column(String(255), nullable=True)
+
+    # Планирование и статус
+    scheduled_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="completed", nullable=False)
     
     # Статистика
     total_users = Column(Integer, default=0, nullable=False)
@@ -777,6 +973,22 @@ class Broadcast(Base):
     
     # Создатель
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    @property
+    def admin_id(self) -> Optional[int]:
+        """Legacy-алиас поля создателя."""
+        return self.created_by
+
+    @admin_id.setter
+    def admin_id(self, value: Optional[int]) -> None:
+        self.created_by = value
+
+    @property
+    def text_content(self) -> str:
+        """Контент рассылки."""
+        if self.text:
+            return self.text
+        return self.text_ru or self.text_en or ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
