@@ -28,8 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
 from database.models import (
-    User, Channel, Package, Subscription,
-    Payment, PromoCode, PromoUsage
+    User, Channel, SubscriptionPackage, UserSubscription,
+    Payment, Promocode, PromocodeUsage
 )
 from database.crud import (
     UserCRUD, ChannelCRUD, PackageCRUD,

@@ -13,24 +13,87 @@
         <div class="table-responsive">
             <table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>ID</th><th>Текст</th><th>Статус</th><th>Отправлено</th><th>Дата</th></tr>
+                    <tr>
+                        <th>ID</th>
+                        <th>Текст</th>
+                        <th>Статус</th>
+                        <th>Прогресс</th>
+                        <th>Дата</th>
+                        <th>Действия</th>
+                    </tr>
                 </thead>
                 <tbody>
                     {% for broadcast in broadcasts %}
                     <tr>
                         <td>#{{ broadcast.id }}</td>
-                        <td>{{ broadcast.text | truncate(50) if broadcast.text else '-' }}</td>
                         <td>
-                            {% if broadcast.status == 'completed' %}<span class="badge bg-success">Завершена</span>
-                            {% elif broadcast.status == 'in_progress' %}<span class="badge bg-warning">В процессе</span>
-                            {% elif broadcast.status == 'pending' %}<span class="badge bg-info">Ожидает</span>
-                            {% else %}<span class="badge bg-secondary">{{ broadcast.status }}</span>{% endif %}
+                            <span title="{{ broadcast.text }}">{{ broadcast.text[:50] if broadcast.text else '-' }}{% if broadcast.text and broadcast.text|length > 50 %}...{% endif %}</span>
+                            {% if broadcast.button_text %}
+                            <br><small class="text-muted"><i class="bi bi-link"></i> {{ broadcast.button_text }}</small>
+                            {% endif %}
                         </td>
-                        <td>{{ broadcast.sent_count or 0 }} / {{ broadcast.total_count or 0 }}</td>
+                        <td>
+                            {% if broadcast.status == 'completed' %}
+                                <span class="badge bg-success">Завершена</span>
+                            {% elif broadcast.status == 'in_progress' %}
+                                <span class="badge bg-warning">В процессе</span>
+                            {% elif broadcast.status == 'pending' %}
+                                <span class="badge bg-info">Ожидает</span>
+                            {% elif broadcast.status == 'cancelled' %}
+                                <span class="badge bg-secondary">Отменена</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ broadcast.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="progress" style="height: 20px; min-width: 100px;">
+                                {% set progress = (broadcast.sent_count / broadcast.total_count * 100) if broadcast.total_count > 0 else 0 %}
+                                <div class="progress-bar bg-success" style="width: {{ progress }}%">
+                                    {{ broadcast.sent_count or 0 }}
+                                </div>
+                                {% if broadcast.failed_count %}
+                                <div class="progress-bar bg-danger" style="width: {{ (broadcast.failed_count / broadcast.total_count * 100) if broadcast.total_count > 0 else 0 }}%">
+                                    {{ broadcast.failed_count }}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <small class="text-muted">{{ broadcast.sent_count or 0 }} / {{ broadcast.total_count or 0 }}</small>
+                        </td>
                         <td><small>{{ broadcast.created_at.strftime('%d.%m.%Y %H:%M') }}</small></td>
+                        <td>
+                            {% if broadcast.status == 'pending' %}
+                            <form method="post" action="/broadcasts/{{ broadcast.id }}/start" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-success" title="Запустить">
+                                    <i class="bi bi-play-fill"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if broadcast.status in ['pending', 'in_progress'] %}
+                            <form method="post" action="/broadcasts/{{ broadcast.id }}/cancel" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-warning" title="Отменить">
+                                    <i class="bi bi-stop-fill"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if broadcast.status in ['completed', 'cancelled'] %}
+                            <form method="post" action="/broadcasts/{{ broadcast.id }}/delete" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Удалить">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="5" class="text-center text-muted py-4">Рассылки не созданы</td></tr>
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="bi bi-megaphone" style="font-size: 2rem;"></i>
+                            <p class="mt-2">Рассылки не созданы</p>
+                            <a href="/broadcasts/new" class="btn btn-primary btn-sm">
+                                <i class="bi bi-plus-lg"></i> Создать первую рассылку
+                            </a>
+                        </td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>

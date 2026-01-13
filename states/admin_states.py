@@ -185,11 +185,11 @@ class SettingsAdminState(StatesGroup):
 
 class ChannelAdminState(StatesGroup):
     """Состояния для управления каналами."""
-    
+
     # Просмотр
     viewing_list = State()               # Список каналов
     viewing_channel = State()            # Просмотр канала
-    
+
     # Создание
     entering_channel_id = State()        # Ввод ID канала
     entering_channel_name = State()      # Ввод названия
@@ -199,14 +199,43 @@ class ChannelAdminState(StatesGroup):
     entering_price_90 = State()          # Цена за 90 дней
     entering_price_365 = State()         # Цена за 365 дней
     confirming_creation = State()        # Подтверждение создания
-    
+
     # Редактирование
     editing_name = State()               # Редактирование названия
     editing_description = State()        # Редактирование описания
     editing_prices = State()             # Редактирование цен
-    
+
     # Удаление
     confirming_delete = State()          # Подтверждение удаления
+
+
+class ChannelAddState(StatesGroup):
+    """Состояния добавления канала (пошаговый визард)."""
+    waiting_channel_id = State()         # Ожидание ID/username канала
+    waiting_name_ru = State()            # Ввод названия RU
+    waiting_name_en = State()            # Ввод названия EN
+    waiting_description_ru = State()     # Ввод описания RU
+    waiting_description_en = State()     # Ввод описания EN
+    waiting_image = State()              # Загрузка изображения
+    confirm = State()                    # Подтверждение
+
+
+class ChannelEditState(StatesGroup):
+    """Состояния редактирования канала."""
+    waiting_new_value = State()          # Ожидание нового значения поля
+    waiting_image = State()              # Ожидание нового изображения
+    confirm_delete = State()             # Подтверждение удаления
+
+
+class ChannelOrderState(StatesGroup):
+    """Состояния изменения порядка каналов."""
+    selecting_channel = State()          # Выбор канала
+    selecting_position = State()         # Выбор позиции
+
+
+class TrialSettingsState(StatesGroup):
+    """Состояния настройки пробного периода."""
+    waiting_days = State()               # Ввод количества дней
 
 
 # ==================== ПАКЕТЫ (дополнительно) ====================

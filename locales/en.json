@@ -1,8 +1,9 @@
 {
     "welcome": "👋 Welcome to the bot!\n\nHere you can purchase access to private channels.",
+    "welcome_back": "👋 Welcome back, {name}!",
     "select_language": "🌐 Select language / Выберите язык:",
     "language_set": "✅ Language set: English",
-    
+
     "menu": {
         "main": "📋 <b>Main Menu</b>\n\nSelect an action:",
         "catalog": "📢 Catalog",
@@ -10,68 +11,110 @@
         "support": "💬 Support",
         "language": "🌐 Language"
     },
-    
+
     "catalog": {
         "title": "📢 <b>Channel Catalog</b>\n\nSelect a category:",
         "channels": "📢 Channels",
         "packages": "📦 Packages",
-        "empty": "😔 No channels added yet"
+        "empty": "😔 No channels added yet",
+        "channel_list": "📢 <b>Available channels:</b>",
+        "package_list": "📦 <b>Subscription packages:</b>"
     },
-    
+
     "channel": {
         "info": "📢 <b>{title}</b>\n\n{description}\n\n👥 Subscribers: {subscribers}",
-        "subscribe": "📝 Subscribe"
+        "subscribe": "📝 Subscribe",
+        "select_plan": "💰 Select a plan:",
+        "not_found": "❌ Channel not found"
     },
-    
+
     "subscription": {
         "select_period": "⏱ Select subscription period:",
         "days_30": "30 days",
         "days_90": "90 days",
         "days_365": "365 days",
-        "price": "💰 Price: {price}"
+        "forever": "Forever",
+        "price": "💰 Price: {price}",
+        "active": "✅ Active until {date}",
+        "expired": "❌ Expired",
+        "no_subscriptions": "You have no active subscriptions"
     },
-    
+
     "payment": {
         "title": "💳 <b>Payment</b>",
         "amount": "💰 Amount: {amount}",
         "pay_button": "💳 Pay",
+        "check_button": "🔄 Check payment",
+        "cancel_button": "❌ Cancel",
+        "promo_button": "🎟 Promo code",
         "processing": "⏳ Processing payment...",
         "success": "✅ Payment successful!",
-        "failed": "❌ Payment failed"
+        "failed": "❌ Payment failed",
+        "cancelled": "❌ Payment cancelled",
+        "expired": "⏰ Payment time expired",
+        "pending": "⏳ Waiting for payment...",
+        "not_found": "❌ Payment not found",
+        "check_error": "❌ Payment check error",
+        "success_alert": "✅ Payment successful!",
+        "payment_with_promo": "💳 <b>Payment</b>\n\n💰 Amount: {original_amount}\n🎟 Promo code: {promo_code}\n💸 Discount: -{discount}\n\n✅ <b>Total: {final_amount}</b>",
+        "payment_success_with_links": "✅ <b>Payment successful!</b>\n\n💰 Amount: {amount}\n📅 Valid until: {expires}\n\n{links}",
+        "payment_error": "❌ Payment creation error"
     },
-    
+
     "profile": {
         "title": "👤 <b>Your Profile</b>",
         "id": "🆔 ID: {user_id}",
+        "balance": "💰 Balance: ${balance}",
+        "total_spent": "💸 Total spent: ${spent}",
         "subscriptions": "📢 Active subscriptions: {count}",
-        "registered": "📅 Registration date: {date}"
+        "registered": "📅 Registration date: {date}",
+        "my_subscriptions": "📋 My subscriptions",
+        "referrals": "👥 Referral program"
     },
-    
+
     "promo": {
         "enter": "🎟 Enter promo code:",
+        "enter_for_payment": "🎟 Enter promo code for discount:",
         "applied": "✅ Promo code applied! Discount: {discount}",
         "invalid": "❌ Invalid promo code",
-        "expired": "❌ Promo code has expired"
+        "expired": "❌ Promo code has expired",
+        "already_used": "❌ You have already used this promo code"
     },
-    
+
+    "referral": {
+        "title": "👥 <b>Referral Program</b>",
+        "description": "Invite friends and get <b>10%</b> of their first purchase!",
+        "your_link": "🔗 <b>Your referral link:</b>",
+        "stats": "📊 <b>Your statistics:</b>",
+        "total_referrals": "├ Invited: <b>{count}</b> people",
+        "with_purchases": "├ With purchases: <b>{count}</b> people",
+        "total_earned": "└ Earned: <b>${amount}</b>",
+        "new_referral": "🎉 A new user registered via your link: <b>{name}</b>",
+        "bonus_received": "🎁 <b>Referral Bonus!</b>\n\nYour referral <b>{name}</b> made their first purchase for <b>${amount}</b>.\n\nYou received: <b>${bonus}</b> to your balance!"
+    },
+
     "subscription_expired": "⚠️ Your subscription to <b>{channel_name}</b> has expired.",
     "subscription_expires_3_days": "⏰ Subscription to <b>{channel_name}</b> expires on {expires_at}",
     "subscription_expires_1_day": "⏰ Subscription to <b>{channel_name}</b> expires tomorrow!",
     "subscription_expires_soon": "⏰ Subscription to <b>{channel_name}</b> expires in {hours} hours!",
-    
+
     "buttons": {
         "back": "◀️ Back",
         "cancel": "❌ Cancel",
         "confirm": "✅ Confirm",
-        "refresh": "🔄 Refresh"
+        "refresh": "🔄 Refresh",
+        "main_menu": "🏠 Main menu",
+        "share": "📤 Share",
+        "my_referrals": "👥 My referrals"
     },
-    
+
     "errors": {
         "unknown": "❌ An error occurred. Please try again later.",
         "not_found": "❌ Not found",
-        "access_denied": "🚫 Access denied"
+        "access_denied": "🚫 Access denied",
+        "blocked": "🚫 Your account is blocked"
     },
-    
+
     "admin": {
         "panel": "🔐 <b>Admin Panel</b>",
         "channels": "📢 Channels",
@@ -80,6 +123,7 @@
         "users": "👥 Users",
         "stats": "📊 Statistics",
         "broadcast": "📨 Broadcast",
-        "settings": "⚙️ Settings"
+        "settings": "⚙️ Settings",
+        "only_admins": "🚫 Admins only"
     }
 }

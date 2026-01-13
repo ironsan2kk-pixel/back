@@ -3,6 +3,10 @@
 Чат 5.2 - Telegram бот продажи доступов к каналам
 
 Содержит генераторы клавиатур для:
+- Главное меню админки
+- Каналы
+- Пакеты
+- Тарифы
 - Промокодов
 - Пользователей
 - Статистики
@@ -15,6 +19,447 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from utils.i18n import get_text
+
+
+# ==================== ГЛАВНОЕ МЕНЮ АДМИНКИ ====================
+
+def get_admin_main_menu() -> InlineKeyboardMarkup:
+    """Главное меню админ-панели."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="📢 Каналы", callback_data="admin:channels"),
+        InlineKeyboardButton(text="📦 Пакеты", callback_data="admin:packages")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💰 Тарифы", callback_data="admin:pricing"),
+        InlineKeyboardButton(text="🎟️ Промокоды", callback_data="admin:promos")
+    )
+    builder.row(
+        InlineKeyboardButton(text="👥 Пользователи", callback_data="admin:users"),
+        InlineKeyboardButton(text="📊 Статистика", callback_data="admin:stats")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📨 Рассылка", callback_data="admin:broadcast"),
+        InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin:settings")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="admin:refresh")
+    )
+
+    return builder.as_markup()
+
+
+def get_channels_menu() -> InlineKeyboardMarkup:
+    """Меню управления каналами."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="📋 Список каналов", callback_data="admin:channels:list")
+    )
+    builder.row(
+        InlineKeyboardButton(text="➕ Добавить канал", callback_data="admin:channels:add")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔢 Изменить порядок", callback_data="admin:channels:order")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+def get_packages_menu() -> InlineKeyboardMarkup:
+    """Меню управления пакетами."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="📋 Список пакетов", callback_data="admin:packages:list")
+    )
+    builder.row(
+        InlineKeyboardButton(text="➕ Создать пакет", callback_data="admin:packages:add")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+def get_pricing_menu() -> InlineKeyboardMarkup:
+    """Меню управления тарифами."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="📢 Тарифы каналов", callback_data="admin:pricing:channels")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📦 Тарифы пакетов", callback_data="admin:pricing:packages")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+def get_promos_menu() -> InlineKeyboardMarkup:
+    """Меню управления промокодами."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin:promo:create")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📋 Список промокодов", callback_data="admin:promo:list")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📊 Статистика", callback_data="admin:promo:stats")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+def get_users_menu() -> InlineKeyboardMarkup:
+    """Меню управления пользователями."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="📋 Все пользователи", callback_data="admin:users:list:all")
+    )
+    builder.row(
+        InlineKeyboardButton(text="✅ Активные", callback_data="admin:users:list:active"),
+        InlineKeyboardButton(text="🚫 Заблокированные", callback_data="admin:users:list:banned")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔍 Поиск", callback_data="admin:users:search")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+def get_stats_menu() -> InlineKeyboardMarkup:
+    """Меню статистики."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="📊 Общая", callback_data="admin:stats:general")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📢 По каналам", callback_data="admin:stats:channels"),
+        InlineKeyboardButton(text="📦 По пакетам", callback_data="admin:stats:packages")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💰 Финансы", callback_data="admin:stats:finance")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📤 Экспорт", callback_data="admin:stats:export")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+def get_broadcast_menu() -> InlineKeyboardMarkup:
+    """Меню рассылки."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="✉️ Новая рассылка", callback_data="admin:broadcast:new")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📋 История", callback_data="admin:broadcast:history")
+    )
+    builder.row(
+        InlineKeyboardButton(text="⏰ Запланированные", callback_data="admin:broadcast:scheduled")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+def get_settings_menu() -> InlineKeyboardMarkup:
+    """Меню настроек."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="⚙️ Общие", callback_data="admin:settings:general")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💳 Оплата", callback_data="admin:settings:payment")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔔 Уведомления", callback_data="admin:settings:notifications")
+    )
+    builder.row(
+        InlineKeyboardButton(text="👑 Администраторы", callback_data="admin:settings:admins")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💾 Бэкап", callback_data="admin:settings:backup")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main")
+    )
+
+    return builder.as_markup()
+
+
+# ==================== КАНАЛЫ ====================
+
+def get_channels_list_keyboard(
+    channels: list,
+    page: int = 0,
+    per_page: int = 10
+) -> InlineKeyboardMarkup:
+    """Список каналов с пагинацией."""
+    builder = InlineKeyboardBuilder()
+
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    page_channels = channels[start_idx:end_idx]
+
+    for channel in page_channels:
+        status = "✅" if channel.get("is_active") else "❌"
+        subs = channel.get("subscribers_count", 0)
+        name = channel.get("name_ru", "—")[:20]
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{status} {name} ({subs})",
+                callback_data=f"admin:channels:view:{channel.get('id')}"
+            )
+        )
+
+    # Пагинация
+    nav_buttons = []
+    total_pages = (len(channels) + per_page - 1) // per_page
+
+    if page > 0:
+        nav_buttons.append(
+            InlineKeyboardButton(text="⬅️", callback_data=f"admin:channels:list:{page - 1}")
+        )
+
+    if total_pages > 1:
+        nav_buttons.append(
+            InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop")
+        )
+
+    if page < total_pages - 1:
+        nav_buttons.append(
+            InlineKeyboardButton(text="➡️", callback_data=f"admin:channels:list:{page + 1}")
+        )
+
+    if nav_buttons:
+        builder.row(*nav_buttons)
+
+    builder.row(
+        InlineKeyboardButton(text="➕ Добавить", callback_data="admin:channels:add")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:channels")
+    )
+
+    return builder.as_markup()
+
+
+def get_channel_detail_keyboard(channel_id: int, is_active: bool) -> InlineKeyboardMarkup:
+    """Детали канала."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="✏️ Название RU",
+            callback_data=f"admin:channels:edit:{channel_id}:name_ru"
+        ),
+        InlineKeyboardButton(
+            text="✏️ Название EN",
+            callback_data=f"admin:channels:edit:{channel_id}:name_en"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="📝 Описание RU",
+            callback_data=f"admin:channels:edit:{channel_id}:desc_ru"
+        ),
+        InlineKeyboardButton(
+            text="📝 Описание EN",
+            callback_data=f"admin:channels:edit:{channel_id}:desc_en"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🖼️ Изображение",
+            callback_data=f"admin:channels:edit:{channel_id}:image"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🎁 Пробный период",
+            callback_data=f"admin:channels:trial:{channel_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="💰 Тарифы",
+            callback_data=f"admin:pricing:channel:{channel_id}"
+        )
+    )
+
+    if is_active:
+        builder.row(
+            InlineKeyboardButton(
+                text="❌ Деактивировать",
+                callback_data=f"admin:channels:deactivate:{channel_id}"
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="✅ Активировать",
+                callback_data=f"admin:channels:activate:{channel_id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="🗑️ Удалить",
+            callback_data=f"admin:channels:delete:{channel_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ К списку", callback_data="admin:channels:list")
+    )
+
+    return builder.as_markup()
+
+
+def get_channel_trial_keyboard(
+    channel_id: int,
+    is_enabled: bool,
+    days: int
+) -> InlineKeyboardMarkup:
+    """Настройки пробного периода."""
+    builder = InlineKeyboardBuilder()
+
+    toggle_text = "🔴 Выключить" if is_enabled else "🟢 Включить"
+    builder.row(
+        InlineKeyboardButton(
+            text=toggle_text,
+            callback_data=f"admin:channels:trial:toggle:{channel_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=f"📅 Дней: {days}",
+            callback_data=f"admin:channels:trial:days:{channel_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="◀️ Назад",
+            callback_data=f"admin:channels:view:{channel_id}"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_channel_order_keyboard(channels: list) -> InlineKeyboardMarkup:
+    """Список каналов для изменения порядка."""
+    builder = InlineKeyboardBuilder()
+
+    for i, channel in enumerate(channels, 1):
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{i}. {channel.get('name_ru', '—')[:25]}",
+                callback_data=f"admin:channels:order:select:{channel.get('id')}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(text="✅ Готово", callback_data="admin:channels:order:save")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Отмена", callback_data="admin:channels")
+    )
+
+    return builder.as_markup()
+
+
+def get_channel_position_keyboard(
+    channel_id: int,
+    current_pos: int,
+    total: int
+) -> InlineKeyboardMarkup:
+    """Выбор позиции для канала."""
+    builder = InlineKeyboardBuilder()
+
+    # Генерируем кнопки позиций
+    buttons = []
+    for i in range(1, total + 1):
+        text = f"[{i}]" if i == current_pos else str(i)
+        buttons.append(
+            InlineKeyboardButton(
+                text=text,
+                callback_data=f"admin:channels:order:move:{channel_id}:{i}"
+            )
+        )
+
+    # Размещаем по 5 в ряд
+    for i in range(0, len(buttons), 5):
+        builder.row(*buttons[i:i + 5])
+
+    builder.row(
+        InlineKeyboardButton(text="◀️ Отмена", callback_data="admin:channels:order")
+    )
+
+    return builder.as_markup()
+
+
+def get_confirm_cancel_keyboard(
+    confirm_callback: str,
+    cancel_callback: str,
+    confirm_text: str = "✅ Подтвердить",
+    cancel_text: str = "❌ Отмена"
+) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения/отмены."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text=confirm_text, callback_data=confirm_callback)
+    )
+    builder.row(
+        InlineKeyboardButton(text=cancel_text, callback_data=cancel_callback)
+    )
+
+    return builder.as_markup()
+
+
+def get_back_button(
+    callback_data: str,
+    text: str = "◀️ Назад"
+) -> InlineKeyboardMarkup:
+    """Кнопка назад."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text=text, callback_data=callback_data)
+    )
+    return builder.as_markup()
+
+
+def get_skip_button(callback_data: str) -> InlineKeyboardButton:
+    """Кнопка пропуска шага."""
+    return InlineKeyboardButton(text="⏭️ Пропустить", callback_data=callback_data)
 
 
 # ==================== ОБЩИЕ КЛАВИАТУРЫ ====================

@@ -34,7 +34,7 @@ from keyboards.admin_kb import (
     get_back_button,
     get_skip_button,
 )
-from states.admin_states import ChannelAddState, ChannelEditState, ChannelOrderState
+from states.admin_states import ChannelAddState, ChannelEditState, ChannelOrderState, TrialSettingsState
 from handlers.admin.main import check_admin
 
 logger = logging.getLogger(__name__)

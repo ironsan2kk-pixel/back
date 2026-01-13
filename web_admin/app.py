@@ -696,6 +696,69 @@ async def broadcast_form(request: Request, db: Session = Depends(get_db)):
     })
 
 
+@app.post("/broadcasts/create")
+async def broadcast_create(
+    text: str = Form(...),
+    button_text: str = Form(""),
+    button_url: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Создать рассылку."""
+    total_users = db.query(User).filter(User.is_blocked == False).count()
+
+    broadcast = Broadcast(
+        text=text,
+        button_text=button_text if button_text else None,
+        button_url=button_url if button_url else None,
+        status="pending",
+        total_count=total_users,
+        sent_count=0,
+        failed_count=0
+    )
+    db.add(broadcast)
+    db.commit()
+
+    logger.info(f"Created broadcast #{broadcast.id} for {total_users} users")
+
+    return RedirectResponse(url="/broadcasts", status_code=303)
+
+
+@app.post("/broadcasts/{broadcast_id}/start")
+async def broadcast_start(broadcast_id: int, db: Session = Depends(get_db)):
+    """Запустить рассылку."""
+    broadcast = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if broadcast and broadcast.status == "pending":
+        broadcast.status = "in_progress"
+        db.commit()
+        logger.info(f"Started broadcast #{broadcast_id}")
+
+    return RedirectResponse(url="/broadcasts", status_code=303)
+
+
+@app.post("/broadcasts/{broadcast_id}/cancel")
+async def broadcast_cancel(broadcast_id: int, db: Session = Depends(get_db)):
+    """Отменить рассылку."""
+    broadcast = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if broadcast and broadcast.status in ["pending", "in_progress"]:
+        broadcast.status = "cancelled"
+        db.commit()
+        logger.info(f"Cancelled broadcast #{broadcast_id}")
+
+    return RedirectResponse(url="/broadcasts", status_code=303)
+
+
+@app.post("/broadcasts/{broadcast_id}/delete")
+async def broadcast_delete(broadcast_id: int, db: Session = Depends(get_db)):
+    """Удалить рассылку."""
+    broadcast = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if broadcast:
+        db.delete(broadcast)
+        db.commit()
+        logger.info(f"Deleted broadcast #{broadcast_id}")
+
+    return RedirectResponse(url="/broadcasts", status_code=303)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 📋 ЛОГИ
 # ═══════════════════════════════════════════════════════════════════════════════
