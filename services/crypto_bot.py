@@ -559,7 +559,8 @@ class CryptoBotAPI:
         )
         
         return transfer
-    
+
+
     async def get_transfers(
         self,
         asset: Optional[Union[str, Currency]] = None,
@@ -760,3 +761,43 @@ async def create_subscription_invoice(
         allow_comments=False,
         expires_in=expires_in,
     )
+
+
+class CryptoBotService:
+    """
+    Legacy-обёртка для совместимости с хендлерами.
+    """
+
+    def __init__(self, token: Optional[str] = None, network: Optional[str] = None):
+        from config import settings
+
+        self.token = token or settings.CRYPTO_BOT_TOKEN
+        self.network = network or settings.CRYPTO_BOT_NETWORK
+        self.api = CryptoBotAPI(self.token, self.network)
+
+    async def create_invoice(
+        self,
+        amount: float,
+        currency: str = "USDT",
+        description: str = "",
+        payload: Optional[str] = None,
+        expires_in: Optional[int] = None,
+    ) -> dict:
+        invoice = await self.api.create_invoice(
+            amount=Decimal(str(amount)),
+            asset=Currency(currency),
+            description=description,
+            payload=payload,
+            expires_in=expires_in,
+        )
+        return {
+            "invoice_id": invoice.invoice_id,
+            "pay_url": invoice.pay_url,
+            "status": invoice.status.value,
+        }
+
+    async def get_invoice_status(self, invoice_id: int) -> dict:
+        invoice = await self.api.get_invoice(invoice_id)
+        if not invoice:
+            return {"status": "not_found"}
+        return {"status": invoice.status.value}
