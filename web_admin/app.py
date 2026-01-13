@@ -14,11 +14,61 @@ from datetime import datetime, timedelta
 from typing import Optional
 import os
 import sys
+import logging
+import traceback
+from logging.handlers import RotatingFileHandler
 
 # Добавляем родительскую директорию в путь
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import settings
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 📝 НАСТРОЙКА ЛОГИРОВАНИЯ
+# ═══════════════════════════════════════════════════════════════════════════════
+
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Основной логгер
+logger = logging.getLogger("web_admin")
+logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
+
+# Форматтер
+formatter = logging.Formatter(
+    "%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+# Файловый обработчик для всех логов
+file_handler = RotatingFileHandler(
+    os.path.join(LOG_DIR, "web_admin.log"),
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=5,
+    encoding="utf-8"
+)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+# Файловый обработчик только для ошибок
+error_handler = RotatingFileHandler(
+    os.path.join(LOG_DIR, "web_admin_errors.log"),
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=5,
+    encoding="utf-8"
+)
+error_handler.setLevel(logging.ERROR)
+error_handler.setFormatter(formatter)
+
+# Консольный обработчик
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+
+# Добавляем обработчики
+logger.addHandler(file_handler)
+logger.addHandler(error_handler)
+logger.addHandler(console_handler)
 
 # Синхронный движок для веб-админки
 sync_database_url = settings.DATABASE_URL.replace("+aiosqlite", "").replace("sqlite+aiosqlite", "sqlite")
@@ -36,6 +86,77 @@ from database.models import (
 # ═══════════════════════════════════════════════════════════════════════════════
 
 app = FastAPI(title="Bot Admin Panel", docs_url=None, redoc_url=None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🛡️ MIDDLEWARE ДЛЯ ЛОГИРОВАНИЯ
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Middleware для логирования запросов и ошибок."""
+    start_time = datetime.now()
+
+    # Логируем входящий запрос
+    logger.debug(f"➡️  {request.method} {request.url.path}")
+
+    try:
+        response = await call_next(request)
+
+        # Время выполнения
+        duration = (datetime.now() - start_time).total_seconds()
+
+        # Логируем успешный ответ
+        if response.status_code >= 400:
+            logger.warning(
+                f"⚠️  {request.method} {request.url.path} → {response.status_code} ({duration:.3f}s)"
+            )
+        else:
+            logger.debug(
+                f"✅ {request.method} {request.url.path} → {response.status_code} ({duration:.3f}s)"
+            )
+
+        return response
+
+    except Exception as e:
+        # Логируем ошибку с полным traceback
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.error(
+            f"❌ {request.method} {request.url.path} → ERROR ({duration:.3f}s)\n"
+            f"Exception: {type(e).__name__}: {str(e)}\n"
+            f"Traceback:\n{traceback.format_exc()}"
+        )
+        raise
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Глобальный обработчик исключений."""
+    logger.error(
+        f"🔥 Unhandled exception on {request.method} {request.url.path}\n"
+        f"Exception: {type(exc).__name__}: {str(exc)}\n"
+        f"Traceback:\n{traceback.format_exc()}"
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "detail": str(exc) if settings.DEBUG else "An error occurred"
+        }
+    )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Событие при запуске приложения."""
+    logger.info("🚀 Web Admin Panel запущена")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Событие при остановке приложения."""
+    logger.info("🛑 Web Admin Panel остановлена")
 
 # Пути
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
